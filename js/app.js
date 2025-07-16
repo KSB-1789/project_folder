@@ -4,42 +4,33 @@ import { supabase } from './supabaseClient.js';
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 const logoutButton = document.getElementById('logout-button');
-
 const onboardingView = document.getElementById('onboarding-view');
 const dashboardView = document.getElementById('dashboard-view');
-
 const setupForm = document.getElementById('setup-form');
 const setupError = document.getElementById('setup-error');
-
 const attendanceSummary = document.getElementById('attendance-summary');
 const dailyLogContainer = document.getElementById('daily-log-container');
-const saveLogButton = document.getElementById('save-log-button');
-
-const updateSettingsForm = document.getElementById('update-settings-form');
+const historicalDatePicker = document.getElementById('historical-date');
 const updateTimetableForm = document.getElementById('update-timetable-form');
-
 
 // --- State ---
 let currentUser = null;
 let userProfile = null;
-let attendanceLog = [];
+let attendanceLog = []; // This will now be a cache of the full log from the DB
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
     loadingText.textContent = message;
     loadingOverlay.style.display = 'flex';
 };
-
 const hideLoading = () => {
     loadingOverlay.style.display = 'none';
 };
 
-const getTodayDay = () => {
-    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    return days[new Date().getDay()];
-};
-
-// --- Authentication & Initialization ---
+/**
+ * Main initialization function. Authenticates the user, fetches their
+ * profile, and kicks off the entire dashboard rendering process.
+ */
 const init = async () => {
     showLoading('Authenticating...');
     const { data: { session }, error } = await supabase.auth.getSession();
@@ -50,47 +41,225 @@ const init = async () => {
     }
     currentUser = session.user;
 
-    await loadUserProfile();
-    hideLoading();
-};
+    const { data, profileError } = await supabase.from('profiles').select('*').single();
 
-const loadUserProfile = async () => {
-    const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .single();
-
-    if (error && error.code !== 'PGRST116') { // PGRST116: 'exact one row not found'
-        console.error('Error fetching profile:', error);
-        return;
+    if (profileError && profileError.code !== 'PGRST116') { // Ignore 'not found' error
+        hideLoading();
+        return console.error('Error fetching profile:', profileError);
     }
 
     if (data) {
         userProfile = data;
-        await loadAttendanceLog();
-        renderDashboard();
+        // This is the core logic engine that makes the app dynamic
+        await runFullAttendanceUpdate();
     } else {
-        // First-time user, show onboarding
-        dashboardView.style.display = 'none';
+        // First-time user, show the onboarding screen
+        hideLoading();
         onboardingView.style.display = 'block';
+        dashboardView.style.display = 'none';
     }
 };
 
-const loadAttendanceLog = async () => {
-    const { data, error } = await supabase
-        .from('attendance_log')
-        .select('*')
-        .eq('user_id', currentUser.id);
+/**
+ * Orchestrates the entire update and render pipeline. This is the main
+ * workflow for a returning user.
+ */
+const runFullAttendanceUpdate = async () => {
+    showLoading('Updating attendance records...');
+    await populateAttendanceLog(); // Automatically creates lecture records for past days
+    showLoading('Loading your dashboard...');
+    await loadFullAttendanceLog(); // Loads all records into memory
+    renderDashboard(); // Renders the UI with the fresh data
+    hideLoading();
+}
 
-    if (error) {
-        console.error('Error fetching attendance log:', error);
+/**
+ * This is the "automatic daily increment" feature.
+ * It checks for days between the last log and today and creates
+ * default 'Missed' records for any scheduled lectures.
+ */
+const populateAttendanceLog = async () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+    let lastLog;
+    if (userProfile.last_log_date) {
+        lastLog = new Date(userProfile.last_log_date + 'T00:00:00'); // Ensure correct date parsing
     } else {
-        attendanceLog = data;
+        // If it's the very first time, start from the day before the semester
+        lastLog = new Date(userProfile.start_date);
+        lastLog.setDate(lastLog.getDate() - 1);
     }
+
+    let currentDate = new Date(lastLog);
+    currentDate.setDate(currentDate.getDate() + 1); // Start checking from the day AFTER the last log
+
+    const newLogEntries = [];
+
+    while (currentDate <= today) {
+        const dayIndex = currentDate.getDay();
+        if (dayIndex !== 0 && dayIndex !== 6) { // Skip Sunday and Saturday
+            const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
+            const lecturesToday = userProfile.timetable_json[dayName] || [];
+
+            for (const subject of lecturesToday) {
+                newLogEntries.push({
+                    user_id: currentUser.id,
+                    date: new Date(currentDate).toISOString().slice(0, 10),
+                    subject_name: subject.replace(/ (Lab|Theory)$/, ''), // Get base name
+                    category: subject.endsWith('Lab') ? 'Lab' : 'Theory',
+                    status: 'Missed' // Default status is 'Missed'
+                });
+            }
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    if (newLogEntries.length > 0) {
+        // `onConflict` ensures we don't create duplicates if the script is run multiple times for the same day.
+        await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name' });
+    }
+
+    // Update the profile with today's date so we don't re-process these days again.
+    const { error } = await supabase.from('profiles').update({ last_log_date: today.toISOString().slice(0, 10) }).eq('id', currentUser.id);
+    if (error) console.error("Error updating last_log_date", error);
 };
 
-// --- Onboarding Logic ---
+
+/**
+ * Fetches the entire attendance log for the user from the database.
+ */
+const loadFullAttendanceLog = async () => {
+    const { data, error } = await supabase.from('attendance_log').select('*').order('date', { ascending: false });
+    if (error) return console.error("Error fetching attendance log:", error);
+    attendanceLog = data;
+};
+
+/**
+ * Renders the entire dashboard, including the summary table and the daily logger.
+ */
+const renderDashboard = () => {
+    renderSummaryTable();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    historicalDatePicker.value = todayStr; // Set date picker to today
+    renderScheduleForDate(todayStr); // Render today's schedule by default
+    dashboardView.style.display = 'block';
+    onboardingView.style.display = 'none';
+};
+
+/**
+ * Calculates all stats from the local attendanceLog and renders the detailed summary table.
+ */
+const renderSummaryTable = () => {
+    const subjectStats = {};
+
+    // 1. Aggregate stats from the log
+    for (const log of attendanceLog) {
+        const baseSubject = log.subject_name;
+        if (!subjectStats[baseSubject]) {
+            subjectStats[baseSubject] = {
+                Theory: { Attended: 0, Held: 0 },
+                Lab: { Attended: 0, Held: 0 }
+            };
+        }
+        if (log.status !== 'Cancelled') {
+            subjectStats[baseSubject][log.category].Held++;
+            if (log.status === 'Attended') {
+                subjectStats[baseSubject][log.category].Attended++;
+            }
+        }
+    }
+
+    // 2. Build the HTML table
+    let tableHTML = `
+        <h3>Overall Summary</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Subject</th>
+                    <th>Category</th>
+                    <th>Attended</th>
+                    <th>Held</th>
+                    <th>Percentage</th>
+                    <th>Overall Subject %</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const subjectName of Object.keys(subjectStats).sort()) {
+        const stats = subjectStats[subjectName];
+        const totalHeld = stats.Theory.Held + stats.Lab.Held;
+        const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
+        const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
+        
+        const hasTheory = stats.Theory.Held > 0;
+        const hasLab = stats.Lab.Held > 0;
+        const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
+
+        if (hasTheory) {
+            const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
+            tableHTML += `
+                <tr class="${percentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">
+                    <td ${rowSpan}>${subjectName}</td>
+                    <td>Theory</td>
+                    <td>${stats.Theory.Attended}</td>
+                    <td>${stats.Theory.Held}</td>
+                    <td>${percentage}%</td>
+                    <td ${rowSpan} class="${overallPercentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">${overallPercentage}%</td>
+                </tr>
+            `;
+        }
+        if (hasLab) {
+            const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
+             tableHTML += `
+                <tr class="${percentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">
+                    ${hasTheory ? '' : `<td>${subjectName}</td>`}
+                    <td>Lab</td>
+                    <td>${stats.Lab.Attended}</td>
+                    <td>${stats.Lab.Held}</td>
+                    <td>${percentage}%</td>
+                    ${hasTheory ? '' : `<td class="${overallPercentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">${overallPercentage}%</td>`}
+                </tr>
+            `;
+        }
+    }
+
+    tableHTML += '</tbody></table>';
+    attendanceSummary.innerHTML = tableHTML;
+};
+
+
+/**
+ * Renders the interactive attendance logger for a specific date from the local cache.
+ */
+const renderScheduleForDate = (dateStr) => {
+    const lecturesOnDate = attendanceLog.filter(log => log.date.slice(0, 10) === dateStr);
+
+    if (lecturesOnDate.length === 0) {
+        dailyLogContainer.innerHTML = `<p>No classes scheduled for this day.</p>`;
+        return;
+    }
+
+    let logHTML = `<h3>Schedule for ${dateStr}</h3>`;
+    lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
+        logHTML += `
+            <div class="log-item">
+                <strong>${log.subject_name} (${log.category})</strong>
+                <div class="log-actions">
+                    <button data-id="${log.id}" data-status="Attended" class="log-btn ${log.status === 'Attended' ? 'active' : ''}">Attended</button>
+                    <button data-id="${log.id}" data-status="Missed" class="log-btn ${log.status === 'Missed' ? 'active' : ''}">Missed</button>
+                    <button data-id="${log.id}" data-status="Cancelled" class="log-btn ${log.status === 'Cancelled' ? 'active' : ''}">Cancelled</button>
+                </div>
+            </div>
+        `;
+    });
+    dailyLogContainer.innerHTML = logHTML;
+};
+
+/**
+ * Handles the initial user setup form submission.
+ */
 const handleSetup = async (e) => {
     e.preventDefault();
     showLoading('Parsing Timetable...');
@@ -125,17 +294,18 @@ const handleSetup = async (e) => {
         if (error) throw error;
         
         userProfile = data;
-        await loadAttendanceLog();
-        renderDashboard();
+        await runFullAttendanceUpdate(); // Run the main logic after setup is complete
 
     } catch (error) {
         setupError.textContent = `Error: ${error.message}`;
         console.error(error);
-    } finally {
         hideLoading();
     }
 };
 
+/**
+ * Parses the uploaded PDF to extract the schedule. Tailored for the specific timetable format.
+ */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -146,73 +316,51 @@ const parseTimetable = (file) => {
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    // We use a space to ensure words from different items don't merge
                     fullText += textContent.items.map(item => item.str).join(' ');
                 }
 
-                // --- NEW, ROBUST PARSING LOGIC ---
-
-                // 1. Define a list of all possible subjects from your specific timetable.
-                // This makes the parser much more reliable than guessing.
-                // We include variations to catch everything.
-                const potentialSubjects = [
-                    "DA Lab", "DSA Lab", "IoT Lab", // Multi-word subjects first
-                    "DA", "OS", "IoT", "Stats", "DSA",
-                    "Discrete m" // Handle the specific "Discrete m" case
-                ];
-
-                // 2. Find which of these subjects actually exist in the document.
-                const uniqueSubjects = new Set();
+                const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
+                const subjectMap = {};
                 potentialSubjects.forEach(subject => {
-                    // Use a regular expression to find the subject as a whole word
+                    const cleanName = subject.replace(/ m$/, ''); // "Discrete m" -> "Discrete"
+                    const category = subject.endsWith('Lab') ? 'Lab' : 'Theory';
                     const regex = new RegExp(`\\b${subject}\\b`, 'g');
                     if (fullText.match(regex)) {
-                        // Clean up "Discrete m" to just be "Discrete" for simplicity
-                        const cleanSubject = subject === "Discrete m" ? "Discrete" : subject;
-                        uniqueSubjects.add(cleanSubject);
+                        if (!subjectMap[cleanName]) subjectMap[cleanName] = [];
+                        subjectMap[cleanName].push(category);
                     }
                 });
+                
+                const uniqueSubjects = Object.keys(subjectMap).map(name => {
+                    if (subjectMap[name].length > 1 || subjectMap[name][0] === 'Lab') return `${name} Lab`;
+                    return name;
+                }).filter((value, index, self) => self.indexOf(value) === index);
 
-                if (uniqueSubjects.size === 0) {
-                    reject(new Error("Could not find any known subjects in the PDF. The PDF format may have changed."));
-                    return;
-                }
 
-                // 3. Use the days of the week as anchors to build the schedule.
                 const timetable = {};
-                const days = ["Mo", "Tu", "We", "Th", "Fr"];
-                const dayFullNames = { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday" };
-
-                // Add a "sentinel" at the end to properly segment the last day (Friday)
-                const textWithSentinel = fullText + " End";
-                const dayRegex = /(Mo|Tu|We|Th|Fr|End)/g;
-
-                // Split the document into chunks based on the days
-                const parts = textWithSentinel.split(dayRegex);
+                const days = { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday" };
+                const dayRegex = /(Mo|Tu|We|Th|Fr|Timetable generated)/g;
+                const parts = fullText.split(dayRegex);
 
                 for (let i = 0; i < parts.length; i++) {
                     const part = parts[i];
-                    if (days.includes(part)) {
-                        const dayAbbreviation = part;
-                        const dayFullName = dayFullNames[dayAbbreviation];
-                        const daySchedule = [];
-                        
-                        // The text for this day is the next item in the split array
+                    if (days[part]) {
+                        const dayFullName = days[part];
+                        const daySchedule = new Set();
                         const dayTextContent = parts[i + 1] || "";
-
-                        // Check which subjects appear in this day's text
-                        uniqueSubjects.forEach(subject => {
-                            // The "Discrete" subject was stored clean, but we search for its original form in the text
-                            const searchString = subject === "Discrete" ? "Discrete m" : subject;
-                            if (dayTextContent.includes(searchString)) {
-                                daySchedule.push(subject);
-                            }
+                        
+                        potentialSubjects.forEach(subject => {
+                             if (dayTextContent.includes(subject)) {
+                                 const cleanName = subject.replace(/ m$/, '');
+                                 const category = subject.endsWith('Lab') ? 'Lab' : 'Theory';
+                                 daySchedule.add(`${cleanName} ${category}`);
+                             }
                         });
-                        timetable[dayFullName] = daySchedule;
+                        timetable[dayFullName] = Array.from(daySchedule);
                     }
                 }
                 
-                resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjects) });
+                resolve({ timetable, uniqueSubjects: Object.keys(subjectMap) });
 
             } catch (err) {
                 reject(new Error(`Failed to process PDF. ${err.message}`));
@@ -223,201 +371,58 @@ const parseTimetable = (file) => {
     });
 };
 
+// --- EVENT HANDLERS ---
 
-// --- Core Logic ---
-const calculateAttendance = () => {
-    const { start_date, timetable_json, unique_subjects, attendance_threshold } = userProfile;
-    const results = {};
-    const today = new Date();
-    const startDate = new Date(start_date);
+/**
+ * Handles clicks on the 'Attended'/'Missed'/'Cancelled' buttons.
+ * Updates local state for instant UI feedback, then updates the database.
+ */
+async function handleMarkAttendance(e) {
+    if (!e.target.classList.contains('log-btn')) return;
 
-    unique_subjects.forEach(subject => {
-        results[subject] = {
-            total: 0,
-            attended: 0,
-            absent: 0,
-            cancelled: 0,
-        };
-    });
+    const button = e.target;
+    const logId = button.dataset.id;
+    const newStatus = button.dataset.status;
 
-    // Count total classes held
-    for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-        const dayIndex = d.getDay();
-        if (dayIndex === 0 || dayIndex === 6) continue; // Skip weekends
+    showLoading('Updating...');
 
-        const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
-        const lecturesToday = timetable_json[dayName] || [];
-        
-        lecturesToday.forEach(subject => {
-            if (results[subject]) {
-                results[subject].total++;
-            }
-        });
+    // Update the local cache for instant UI feedback
+    const logIndex = attendanceLog.findIndex(log => log.id == logId);
+    if (logIndex === -1) {
+        hideLoading();
+        return console.error("Log ID not found in cache.");
     }
-
-    // Adjust counts based on attendance log
-    attendanceLog.forEach(log => {
-        if(results[log.subject_name]) {
-            if (log.status === 'absent') {
-                results[log.subject_name].absent++;
-            } else if (log.status === 'cancelled') {
-                results[log.subject_name].cancelled++;
-                results[log.subject_name].total--; // Cancelled classes don't count towards total held
-            }
-        }
-    });
-
-    // Calculate final stats
-    Object.keys(results).forEach(subject => {
-        const res = results[subject];
-        res.attended = res.total - res.absent;
-        res.percentage = res.total > 0 ? ((res.attended / res.total) * 100).toFixed(2) : 100;
-        const minAttended = Math.ceil(res.total * (attendance_threshold / 100));
-        res.bunksAvailable = res.attended - minAttended;
-    });
-
-    return results;
-};
-
-// --- Rendering ---
-const renderDashboard = () => {
-    onboardingView.style.display = 'none';
-    const attendanceData = calculateAttendance();
-    const { attendance_threshold } = userProfile;
-
-    let tableHTML = `
-        <table>
-            <thead>
-                <tr>
-                    <th>Subject</th>
-                    <th>Total Held</th>
-                    <th>Attended</th>
-                    <th>Percentage</th>
-                    <th>Bunks Available</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-    for (const subject in attendanceData) {
-        const data = attendanceData[subject];
-        const isLow = data.percentage < attendance_threshold;
-        tableHTML += `
-            <tr class="${isLow ? 'low-attendance' : ''}">
-                <td>${subject}</td>
-                <td>${data.total}</td>
-                <td>${data.attended}</td>
-                <td>${data.percentage}% ${isLow ? '🔻' : ''}</td>
-                <td>${data.bunksAvailable < 0 ? `Short by ${Math.abs(data.bunksAvailable)}` : data.bunksAvailable}</td>
-            </tr>
-        `;
-    }
-    tableHTML += `</tbody></table>`;
-    attendanceSummary.innerHTML = tableHTML;
+    attendanceLog[logIndex].status = newStatus;
     
-    renderDailyLogOptions();
-    renderSettings();
-    dashboardView.style.display = 'block';
-};
+    // Re-render the UI from the updated cache
+    renderDashboard();
 
-const renderDailyLogOptions = () => {
-    const todayDay = getTodayDay();
-    const subjectsToday = userProfile.timetable_json[todayDay] || [];
-    
-    if (subjectsToday.length === 0) {
-        dailyLogContainer.innerHTML = `<p>No classes scheduled for today (${todayDay}).</p>`;
-        saveLogButton.style.display = 'none';
-        return;
-    }
+    // Update the database in the background
+    const { error } = await supabase.from('attendance_log').update({ status: newStatus }).eq('id', logId);
+    if(error) console.error("Error updating log status:", error);
 
-    let logHTML = '';
-    subjectsToday.forEach(subject => {
-        logHTML += `
-            <div class="log-item">
-                <strong>${subject}</strong>
-                <select data-subject="${subject}">
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
-            </div>
-        `;
-    });
-    dailyLogContainer.innerHTML = logHTML;
-    saveLogButton.style.display = 'block';
-};
-
-const renderSettings = () => {
-    document.getElementById('update-start-date').value = userProfile.start_date;
-    document.getElementById('update-min-attendance').value = userProfile.attendance_threshold;
+    hideLoading();
 }
 
-// --- Event Handlers ---
-const handleLogout = async () => {
-    showLoading('Logging out...');
-    await supabase.auth.signOut();
-    window.location.href = '/index.html';
-};
+/**
+ * Handles when the user picks a new date from the calendar to view/edit.
+ */
+async function handleDateChange(e) {
+    renderScheduleForDate(e.target.value);
+}
 
-const handleSaveLog = async () => {
-    showLoading('Saving log...');
-    const today = new Date().toISOString().slice(0, 10);
-    const logEntries = [];
-
-    const selects = dailyLogContainer.querySelectorAll('select');
-    selects.forEach(select => {
-        const subject = select.dataset.subject;
-        const status = select.value;
-        if (status === 'absent' || status === 'cancelled') {
-            logEntries.push({
-                user_id: currentUser.id,
-                date: today,
-                subject_name: subject,
-                status: status
-            });
-        }
-    });
-
-    if (logEntries.length > 0) {
-        // Simple approach: delete old logs for today and insert new ones
-        await supabase.from('attendance_log').delete().match({ user_id: currentUser.id, date: today });
-        const { error } = await supabase.from('attendance_log').insert(logEntries);
-        if (error) {
-            alert('Error saving log: ' + error.message);
-        }
-    } else {
-        // If everything is marked present, ensure no logs for today exist
-         await supabase.from('attendance_log').delete().match({ user_id: currentUser.id, date: today });
-    }
-
-    await loadAttendanceLog();
-    renderDashboard();
-    hideLoading();
-};
-
-const handleUpdateSettings = async (e) => {
+/**
+ * Handles re-uploading a timetable, which is a destructive action.
+ */
+async function handleUpdateTimetable(e) {
     e.preventDefault();
-    showLoading('Updating settings...');
-    
-    const newStartDate = document.getElementById('update-start-date').value;
-    const newThreshold = document.getElementById('update-min-attendance').value;
-
-    const { error } = await supabase
-        .from('profiles')
-        .update({ start_date: newStartDate, attendance_threshold: parseInt(newThreshold) })
-        .eq('id', currentUser.id);
-
-    if (error) {
-        alert("Failed to update settings: " + error.message);
-    } else {
-        await loadUserProfile(); // Reload profile and re-render
+    if (!confirm("Are you sure? This will delete all existing attendance records and reset your schedule.")) {
+        return;
     }
-    
-    hideLoading();
-};
+    showLoading('Resetting schedule...');
+    // Delete all logs for the user first
+    await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
 
-const handleUpdateTimetable = async (e) => {
-    e.preventDefault();
-    showLoading('Updating timetable...');
     const pdfFile = document.getElementById('update-timetable-pdf').files[0];
     if (!pdfFile) {
         hideLoading();
@@ -428,27 +433,30 @@ const handleUpdateTimetable = async (e) => {
         const { timetable, uniqueSubjects } = await parseTimetable(pdfFile);
         const { error } = await supabase
             .from('profiles')
-            .update({ timetable_json: timetable, unique_subjects: uniqueSubjects })
+            .update({ 
+                timetable_json: timetable, 
+                unique_subjects: uniqueSubjects,
+                last_log_date: null // Reset the log date to force re-population from the start date
+            })
             .eq('id', currentUser.id);
 
         if (error) throw error;
         
-        await loadUserProfile(); // Reload profile and re-render
+        // Reload everything from scratch with the new timetable
+        await init();
 
     } catch (error) {
         alert("Failed to update timetable: " + error.message);
     } finally {
         hideLoading();
     }
-};
-
-// --- Attach Event Listeners ---
-logoutButton.addEventListener('click', handleLogout);
-setupForm.addEventListener('submit', handleSetup);
-saveLogButton.addEventListener('click', handleSaveLog);
-updateSettingsForm.addEventListener('submit', handleUpdateSettings);
-updateTimetableForm.addEventListener('submit', handleUpdateTimetable);
+}
 
 
-// --- Initial Load ---
+// --- ATTACH EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', init);
+logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
+setupForm.addEventListener('submit', handleSetup);
+updateTimetableForm.addEventListener('submit', handleUpdateTimetable);
+dailyLogContainer.addEventListener('click', handleMarkAttendance);
+historicalDatePicker.addEventListener('change', handleDateChange);

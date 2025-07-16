@@ -4,84 +4,121 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Smart Attendance Tracker</title>
-    <link rel="stylesheet" href="css/style.css">
-    
-    <!-- FIX: Using CDN to load PDF.JS to prevent local module resolution errors -->
-    <script type="module">
-        // Import the library from the CDN
-        import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
-
-        // Set the path to the worker file, also from the CDN
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
-
-        // Make the library object globally available for your other scripts to use
-        window.pdfjsLib = pdfjsLib;
-    </script>
+    <!-- Modern Styling with Tailwind CSS and Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple spinner for loading overlay */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
-<body>
-    <div class="container">
-        <div id="loading-overlay">
+<body class="bg-gray-100">
+
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8">
+        
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-75 flex-col items-center justify-center z-50" style="display:none;">
             <div class="spinner"></div>
-            <p id="loading-text">Loading...</p>
+            <p id="loading-text" class="mt-4 text-lg font-medium text-gray-700">Loading...</p>
         </div>
 
-        <div id="app-header">
-            <h1>My Attendance Dashboard</h1>
-            <button id="logout-button">Logout</button>
+        <!-- App Header -->
+        <div id="app-header" class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">My Attendance Dashboard</h1>
+            <button id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-colors duration-300">Logout</button>
         </div>
 
         <!-- Onboarding View -->
-        <div id="onboarding-view" class="view" style="display:none;">
-            <h2>Initial Setup</h2>
-            <p>Welcome! Please provide the following details to get started.</p>
-            <form id="setup-form">
-                <label for="start-date">Semester Start Date:</label>
-                <input type="date" id="start-date" required>
-
-                <label for="min-attendance">Minimum Attendance Percentage:</label>
-                <input type="number" id="min-attendance" value="75" min="1" max="100" required>
-
-                <label for="timetable-pdf">Upload Timetable (PDF):</label>
-                <input type="file" id="timetable-pdf" accept=".pdf" required>
-
-                <button type="submit">Save and Continue</button>
+        <div id="onboarding-view" class="view bg-white p-8 rounded-xl shadow-lg" style="display:block;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Initial Setup</h2>
+            <p class="text-gray-600 mb-6">Welcome! Please provide the following details to get started.</p>
+            <form id="setup-form" class="space-y-4">
+                <div>
+                    <label for="start-date" class="block text-sm font-medium text-gray-700">Semester Start Date:</label>
+                    <input type="date" id="start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance Percentage:</label>
+                    <input type="number" id="min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="timetable-pdf" class="block text-sm font-medium text-gray-700">Upload Timetable (PDF):</label>
+                    <input type="file" id="timetable-pdf" accept=".pdf" required class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-colors duration-300">Save and Continue</button>
             </form>
-            <p id="setup-error" class="error-message"></p>
+            <p id="setup-error" class="error-message text-red-500 mt-4"></p>
         </div>
 
         <!-- Main Dashboard View -->
-        <div id="dashboard-view" class="view" style="display:none;">
-            <div id="attendance-summary">
-                <!-- Data will be injected here by app.js -->
+        <div id="dashboard-view" class="view space-y-8" style="display:none;">
+            <!-- Attendance Summary Section -->
+            <div id="attendance-summary" class="bg-white p-6 rounded-xl shadow-lg">
+                <!-- Detailed Theory/Lab table will be injected here by app.js -->
+                 <p class="text-center text-gray-500">Your attendance summary will appear here.</p>
             </div>
 
-            <div id="actions-section">
-                <h2>Log Today's Attendance</h2>
-                <div id="daily-log-container">
-                    <!-- Daily log options will be injected here -->
+            <!-- Actions Section -->
+            <div id="actions-section" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Mark Attendance</h2>
+                <div class="date-selector mb-4">
+                    <label for="historical-date" class="block text-sm font-medium text-gray-700">Select Date:</label>
+                    <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                 </div>
-                 <button id="save-log-button">Save Today's Log</button>
+                <div id="daily-log-container">
+                    <!-- Daily log options will be injected here by app.js -->
+                    <p class="text-center text-gray-500">Select a date to see lecture options.</p>
+                </div>
             </div>
             
-            <div id="settings-section">
-                <h2>Settings</h2>
-                <form id="update-settings-form">
-                    <label for="update-start-date">Semester Start Date:</label>
-                    <input type="date" id="update-start-date">
-
-                    <label for="update-min-attendance">Minimum Attendance Percentage:</label>
-                    <input type="number" id="update-min-attendance" min="1" max="100">
-
-                    <button type="submit">Update Settings</button>
-                </form>
-                 <form id="update-timetable-form">
-                    <label for="update-timetable-pdf">Re-upload Timetable (PDF):</label>
-                    <input type="file" id="update-timetable-pdf" accept=".pdf" required>
-                    <button type="submit">Update Timetable</button>
+            <!-- Settings Section -->
+            <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
+                <form id="update-timetable-form">
+                    <label for="update-timetable-pdf" class="block text-sm font-medium text-gray-700">Re-upload Timetable (PDF):</label>
+                    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 my-2 rounded-md">
+                        <p class="font-bold">Warning</p>
+                        <p>Re-uploading will reset all your attendance data.</p>
+                    </div>
+                    <input type="file" id="update-timetable-pdf" accept=".pdf" required class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100">
+                    <button type="submit" class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-colors duration-300">Update Timetable</button>
                 </form>
             </div>
         </div>
     </div>
+
+    <!-- SCRIPT LOADING AND SETUP -->
+    <!--
+      IMPORTANT:
+      The old script tags for pdf.js and pdf.worker.js have been removed.
+      The modern ES Module import below now handles everything.
+    -->
+    <script type="module">
+        // 1. Import the library from the CDN using the ES Module version (.mjs)
+        import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
+
+        // 2. Set the path to the worker file, also from the CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+
+        // 3. Make the library object globally available for your app.js script to use
+        window.pdfjsLib = pdfjsLib;
+    </script>
+    
+    <!-- Your existing scripts can now use the globally available pdfjsLib -->
     <script src="js/netlify.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
