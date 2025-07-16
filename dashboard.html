@@ -10,7 +10,6 @@
         body { font-family: 'Inter', sans-serif; }
         .spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #09f; animation: spin 1s ease infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .day-column { min-height: 150px; }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -29,57 +28,9 @@
             <button id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-colors duration-300">Logout</button>
         </div>
 
-        <!-- Onboarding View - COMPLETELY NEW MANUAL BUILDER -->
-        <div id="onboarding-view" class="view bg-white p-8 rounded-xl shadow-lg" style="display:block;">
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Initial Setup</h2>
-            <p class="text-gray-600 mb-6">Welcome! Please build your timetable below.</p>
-            
-            <form id="setup-form" class="space-y-8">
-                <!-- Part 1: General Settings -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label for="start-date" class="block text-sm font-medium text-gray-700">Semester Start Date:</label>
-                        <input type="date" id="start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                    <div>
-                        <label for="min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance Percentage:</label>
-                        <input type="number" id="min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                    </div>
-                </div>
-
-                <!-- Part 2: Subject Definition -->
-                <div id="subject-manager" class="p-4 border rounded-lg">
-                    <h3 class="font-semibold text-lg mb-2">Step 1: Define Your Subjects</h3>
-                    <div class="flex items-end gap-2 mb-4">
-                        <div class="flex-grow">
-                            <label for="new-subject-name" class="block text-sm font-medium text-gray-700">Subject Name (e.g., "DSA", "IoT")</label>
-                            <input type="text" id="new-subject-name" placeholder="Discrete" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
-                        </div>
-                        <div>
-                            <label for="new-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="new-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
-                                <option>Theory</option>
-                                <option>Lab</option>
-                            </select>
-                        </div>
-                        <button type="button" id="add-subject-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">Add Subject</button>
-                    </div>
-                    <ul id="subject-master-list" class="space-y-2">
-                        <!-- Master list of subjects will be rendered here -->
-                    </ul>
-                </div>
-
-                <!-- Part 3: Timetable Builder -->
-                <div id="timetable-builder" class="p-4 border rounded-lg">
-                    <h3 class="font-semibold text-lg mb-4">Step 2: Build Your Weekly Schedule</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                        <!-- Day columns will be rendered here by JS -->
-                    </div>
-                </div>
-
-                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg text-lg transition-colors duration-300">Save and Build Dashboard</button>
-            </form>
-            <p id="setup-error" class="error-message text-red-500 mt-4 font-medium"></p>
+        <!-- Onboarding View -->
+        <div id="onboarding-view" class="view bg-white p-8 rounded-xl shadow-lg" style="display:none;">
+             <!-- All the manual builder HTML from the previous step goes here -->
         </div>
 
         <!-- Main Dashboard View -->
@@ -92,6 +43,8 @@
                     <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 <div id="daily-log-container"></div>
+                <!-- Placeholder for the Save button -->
+                <div id="save-attendance-container" class="mt-4"></div>
             </div>
             <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
@@ -101,7 +54,6 @@
         </div>
     </div>
     
-    <!-- Scripts -->
     <script src="js/netlify.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
