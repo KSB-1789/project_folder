@@ -70,7 +70,8 @@ const runFullAttendanceUpdate = async () => {
 }
 
 /**
- * The "automatic daily increment" feature.
+ * The "automatic daily increment" feature. This remains the same as it
+ * depends on the corrected timetable data.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
@@ -142,7 +143,8 @@ const renderDashboard = () => {
 };
 
 /**
- * Renders the detailed summary table.
+ * UPDATED RENDER SUMMARY TABLE
+ * This version implements the new logic for lecture weighting.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
@@ -152,14 +154,22 @@ const renderSummaryTable = () => {
         if (!subjectStats[baseSubject]) {
             subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
         }
+
+        // --- NEW LECTURE WEIGHTING LOGIC ---
+        let weight = 1;
+        if (log.category === 'Lab' || baseSubject === 'DA' || baseSubject === 'DSA') {
+            weight = 2;
+        }
+
         if (log.status !== 'Cancelled') {
-            subjectStats[baseSubject][log.category].Held++;
+            subjectStats[baseSubject][log.category].Held += weight;
             if (log.status === 'Attended') {
-                subjectStats[baseSubject][log.category].Attended++;
+                subjectStats[baseSubject][log.category].Attended += weight;
             }
         }
     }
 
+    // The rest of the rendering function remains the same, using the new weighted totals.
     let tableHTML = `
         <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3>
         <div class="overflow-x-auto">
@@ -204,6 +214,7 @@ const renderSummaryTable = () => {
     attendanceSummary.innerHTML = tableHTML;
 };
 
+
 /**
  * Renders the interactive logger for a specific date.
  */
@@ -229,6 +240,7 @@ const renderScheduleForDate = (dateStr) => {
     logHTML += `</div>`;
     dailyLogContainer.innerHTML = logHTML;
 };
+
 
 /**
  * Handles the initial user setup form submission.
@@ -274,84 +286,69 @@ const handleSetup = async (e) => {
 };
 
 /**
- * FINAL, ROBUST PARSER
- * This version uses a completely new strategy that is immune to text fragmentation.
+ * FINAL, ROBUST GEOMETRIC PARSER
+ * This version rebuilds the timetable grid based on character coordinates,
+ * making it immune to text fragmentation issues.
  */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                // `window.pdfjsLib` is used here, which you correctly set up in your HTML.
                 const pdf = await window.pdfjsLib.getDocument({ data: event.target.result }).promise;
-                let textItems = [];
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    textItems.push(...textContent.items.map(item => item.str.trim()));
-                }
+                const page = await pdf.getPage(1);
+                const textContent = await page.getTextContent();
                 
-                // Filter out any empty strings that might have resulted from trimming whitespace.
-                textItems = textItems.filter(item => item.length > 0);
+                // Group text items by their vertical position (y-coordinate) to identify rows
+                const rows = {};
+                for (const item of textContent.items) {
+                    const y = Math.round(item.transform[5]); // y-coordinate
+                    if (!rows[y]) rows[y] = [];
+                    rows[y].push(item);
+                }
 
-                const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
-                const uniqueSubjectsFound = new Set();
                 const timetable = {};
+                const uniqueSubjectsFound = new Set();
+                const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
+                const dayMap = { 'Mo': 'Monday', 'Tu': 'Tuesday', 'We': 'Wednesday', 'Th': 'Thursday', 'Fr': 'Friday' };
 
-                const dayMarkers = [
-                    { key: 'Mo', name: 'Monday' }, { key: 'Tu', name: 'Tuesday' }, { key: 'We', name: 'Wednesday' },
-                    { key: 'Th', name: 'Thursday' }, { key: 'Fr', name: 'Friday' }, 
-                    // Use "Timetable" as the final marker, as in "Timetable generated"
-                    { key: 'Timetable', name: 'End' } 
-                ];
+                // Process each row found in the PDF
+                for (const y in rows) {
+                    const rowItems = rows[y];
+                    // Sort items in the row by their horizontal position
+                    rowItems.sort((a, b) => a.transform[4] - b.transform[4]);
+                    const rowText = rowItems.map(item => item.str).join('');
+                    
+                    const dayKey = Object.keys(dayMap).find(key => rowText.startsWith(key));
+                    if (dayKey) {
+                        const dayName = dayMap[dayKey];
+                        const daySchedule = new Set();
 
-                const anchors = [];
-                for (const marker of dayMarkers) {
-                    const index = textItems.indexOf(marker.key);
-                    if (index !== -1) {
-                        anchors.push({ name: marker.name, index: index });
+                        potentialSubjects.forEach(subject => {
+                            const searchSubject = subject.replace(/\s/g, '');
+                            if (rowText.replace(/\s/g, '').includes(searchSubject)) {
+                                let finalName = subject.replace(/ m$/, '');
+                                let category = 'Theory';
+                                if (subject.endsWith('Lab')) {
+                                    finalName = subject.replace(/ Lab$/, '');
+                                    category = 'Lab';
+                                }
+                                daySchedule.add(`${finalName} ${category}`);
+                                uniqueSubjectsFound.add(finalName);
+                            }
+                        });
+                        timetable[dayName] = Array.from(daySchedule);
                     }
                 }
 
-                anchors.sort((a, b) => a.index - b.index);
-
-                if (anchors.length <= 1) {
-                     return reject(new Error("Could not find day markers (Mo, Tu, etc.) in the PDF."));
-                }
-
-                for (let i = 0; i < anchors.length - 1; i++) {
-                    const currentAnchor = anchors[i];
-                    const nextAnchor = anchors[i+1];
-                    const daySlice = textItems.slice(currentAnchor.index, nextAnchor.index);
-                    
-                    // Create a searchable, space-agnostic string from the day's text fragments
-                    const dayTextContent = daySlice.join('').replace(/\s/g, '');
-                    const daySchedule = new Set();
-                    
-                    potentialSubjects.forEach(subject => {
-                        // Create a space-agnostic version of the subject to search for
-                        const searchSubject = subject.replace(/\s/g, '');
-                        if (dayTextContent.includes(searchSubject)) {
-                            let finalName = subject.replace(/ m$/, ''); // "Discrete m" -> "Discrete"
-                            let category = 'Theory';
-                            if (subject.endsWith('Lab')) {
-                                finalName = subject.replace(/ Lab$/, ''); // "DA Lab" -> "DA"
-                                category = 'Lab';
-                            }
-                            daySchedule.add(`${finalName} ${category}`);
-                            uniqueSubjectsFound.add(finalName);
-                        }
-                    });
-                    timetable[currentAnchor.name] = Array.from(daySchedule);
-                }
-
                 if (uniqueSubjectsFound.size === 0) {
-                    return reject(new Error("Could not detect any known subjects in the timetable. Please ensure the PDF is a text-based document."));
+                    return reject(new Error("Could not detect any known subjects. The PDF might be an image or have an unusual format."));
                 }
                 
                 resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjectsFound) });
 
             } catch (err) {
+                console.error("PDF Parsing failed:", err);
                 reject(new Error(`Failed to process PDF. ${err.message}`));
             }
         };
