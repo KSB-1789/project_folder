@@ -71,8 +71,7 @@ const runFullAttendanceUpdate = async () => {
 }
 
 /**
- * FINAL CORRECTED VERSION
- * This is the "automatic daily increment" feature.
+ * The "automatic daily increment" feature.
  * It uses the clean data from the parser to reliably create records.
  */
 const populateAttendanceLog = async () => {
@@ -99,7 +98,6 @@ const populateAttendanceLog = async () => {
             const lecturesToday = userProfile.timetable_json[dayName] || [];
 
             for (const subjectString of lecturesToday) {
-                // Example subjectString: "OS Theory" or "DA Lab"
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
@@ -117,7 +115,6 @@ const populateAttendanceLog = async () => {
     }
 
     if (newLogEntries.length > 0) {
-        // Add `category` to the conflict resolution to handle Theory/Lab on the same day
         await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
     }
 
@@ -135,7 +132,7 @@ const loadFullAttendanceLog = async () => {
 };
 
 /**
- * Renders the entire dashboard, including the summary table and the daily logger.
+ * Renders the entire dashboard UI.
  */
 const renderDashboard = () => {
     renderSummaryTable();
@@ -147,7 +144,7 @@ const renderDashboard = () => {
 };
 
 /**
- * Calculates all stats from the local attendanceLog and renders the detailed summary table.
+ * Calculates all stats from the local attendanceLog and renders the summary table.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
@@ -227,7 +224,7 @@ const renderSummaryTable = () => {
 };
 
 /**
- * Renders the interactive attendance logger for a specific date from the local cache.
+ * Renders the interactive attendance logger for a specific date.
  */
 const renderScheduleForDate = (dateStr) => {
     const lecturesOnDate = attendanceLog.filter(log => log.date.slice(0, 10) === dateStr);
@@ -301,8 +298,8 @@ const handleSetup = async (e) => {
 
 /**
  * FINAL CORRECTED VERSION
- * Parses the PDF and stores subjects in a clean "Name Category" format.
- * Example: "OS Theory", "DA Lab", "Discrete Theory"
+ * Parses the PDF by finding the index of day markers, which is more robust
+ * than splitting the text. It stores subjects in a clean "Name Category" format.
  */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
@@ -320,37 +317,50 @@ const parseTimetable = (file) => {
                 const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
                 const uniqueSubjectsFound = new Set();
                 const timetable = {};
-                const days = { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday" };
-                
-                const dayRegex = /(Mo|Tu|We|Th|Fr|Timetable generated)/g;
-                const parts = fullText.split(dayRegex);
 
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    if (days[part]) {
-                        const dayFullName = days[part];
-                        const daySchedule = new Set();
-                        const dayTextContent = parts[i + 1] || "";
-                        
-                        potentialSubjects.forEach(subject => {
-                            if (dayTextContent.includes(subject)) {
-                                let cleanName = subject.replace(/ m$/, '');
-                                let category = 'Theory';
-                                if (subject.endsWith('Lab')) {
-                                    cleanName = subject.replace(/ Lab$/, '');
-                                    category = 'Lab';
-                                }
-                                
-                                daySchedule.add(`${cleanName} ${category}`);
-                                uniqueSubjectsFound.add(cleanName);
-                            }
-                        });
-                        timetable[dayFullName] = Array.from(daySchedule);
+                const dayMarkers = [
+                    { key: 'Mo', name: 'Monday' },
+                    { key: 'Tu', name: 'Tuesday' },
+                    { key: 'We', name: 'Wednesday' },
+                    { key: 'Th', name: 'Thursday' },
+                    { key: 'Fr', name: 'Friday' },
+                    { key: 'Timetable generated', name: 'End' } // Sentinel to mark the end
+                ];
+
+                const anchors = [];
+                for (const marker of dayMarkers) {
+                    const index = fullText.indexOf(marker.key);
+                    if (index !== -1) {
+                        anchors.push({ name: marker.name, index: index });
                     }
                 }
 
+                // Sort anchors by their position in the text
+                anchors.sort((a, b) => a.index - b.index);
+
+                for (let i = 0; i < anchors.length - 1; i++) {
+                    const currentAnchor = anchors[i];
+                    const nextAnchor = anchors[i+1];
+                    const dayTextContent = fullText.substring(currentAnchor.index, nextAnchor.index);
+                    const daySchedule = new Set();
+                    
+                    potentialSubjects.forEach(subject => {
+                        if (dayTextContent.includes(subject)) {
+                            let cleanName = subject.replace(/ m$/, '');
+                            let category = 'Theory';
+                            if (subject.endsWith('Lab')) {
+                                cleanName = subject.replace(/ Lab$/, '');
+                                category = 'Lab';
+                            }
+                            daySchedule.add(`${cleanName} ${category}`);
+                            uniqueSubjectsFound.add(cleanName);
+                        }
+                    });
+                    timetable[currentAnchor.name] = Array.from(daySchedule);
+                }
+
                 if (uniqueSubjectsFound.size === 0) {
-                    return reject(new Error("Could not detect any known subjects in the timetable."));
+                    return reject(new Error("Could not detect any known subjects in the timetable. Please ensure the PDF is a text-based document."));
                 }
                 
                 resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjectsFound) });
@@ -366,10 +376,6 @@ const parseTimetable = (file) => {
 
 
 // --- EVENT HANDLERS ---
-
-/**
- * Handles clicks on the 'Attended'/'Missed'/'Cancelled' buttons.
- */
 async function handleMarkAttendance(e) {
     if (!e.target.classList.contains('log-btn')) return;
 
@@ -394,16 +400,10 @@ async function handleMarkAttendance(e) {
     hideLoading();
 }
 
-/**
- * Handles when the user picks a new date from the calendar.
- */
 async function handleDateChange(e) {
     renderScheduleForDate(e.target.value);
 }
 
-/**
- * Handles re-uploading a timetable, which is a destructive action.
- */
 async function handleUpdateTimetable(e) {
     e.preventDefault();
     if (!confirm("Are you sure? This will delete all existing attendance records and reset your schedule.")) {
