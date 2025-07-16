@@ -5,10 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Smart Attendance Tracker</title>
     <link rel="stylesheet" href="css/style.css">
-    <script src="js/pdf.js"></script>
-    <script>
-        // Required for pdf.js to work
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `js/pdf.worker.js`;
+    
+    <!-- FIX: Using CDN to load PDF.JS to prevent local module resolution errors -->
+    <script type="module">
+        // Import the library from the CDN
+        import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs';
+
+        // Set the path to the worker file, also from the CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+
+        // Make the library object globally available for your other scripts to use
+        window.pdfjsLib = pdfjsLib;
     </script>
 </head>
 <body>
@@ -75,7 +82,7 @@
             </div>
         </div>
     </div>
-    <script src="js/netlify.js"></script> <!-- ADD THIS LINE -->
+    <script src="js/netlify.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
 </html>
