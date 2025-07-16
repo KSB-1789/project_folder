@@ -4,18 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Smart Attendance Tracker</title>
+    <!-- Modern Styling with Tailwind CSS and Google Fonts -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Basic spinner for loading overlay */
-        #loading-overlay {
-            position: fixed;
-            inset: 0;
-            background-color: rgba(255, 255, 255, 0.75);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 50;
+        body {
+            font-family: 'Inter', sans-serif;
         }
+        /* Simple spinner for loading overlay */
         .spinner {
             border: 4px solid rgba(0, 0, 0, 0.1);
             width: 36px;
@@ -28,86 +24,78 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .error-message {
-            color: red;
-        }
-        .warning {
-            color: orange;
-            border: 1px solid orange;
-            padding: 8px;
-        }
     </style>
 </head>
-<body>
+<body class="bg-gray-100">
 
-    <div>
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8">
         
         <!-- Loading Overlay -->
-        <div id="loading-overlay" style="display:none;">
+        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-75 flex-col items-center justify-center z-50" style="display:none;">
             <div class="spinner"></div>
-            <p id="loading-text">Loading...</p>
+            <p id="loading-text" class="mt-4 text-lg font-medium text-gray-700">Loading...</p>
         </div>
 
         <!-- App Header -->
-        <div id="app-header">
-            <h1>My Attendance Dashboard</h1>
-            <button id="logout-button">Logout</button>
+        <div id="app-header" class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">My Attendance Dashboard</h1>
+            <button id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-colors duration-300">Logout</button>
         </div>
 
         <!-- Onboarding View -->
-        <div id="onboarding-view" class="view" style="display:block;">
-            <h2>Initial Setup</h2>
-            <p>Welcome! Please provide the following details to get started.</p>
-            <form id="setup-form">
+        <div id="onboarding-view" class="view bg-white p-8 rounded-xl shadow-lg" style="display:block;">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Initial Setup</h2>
+            <p class="text-gray-600 mb-6">Welcome! Please provide the following details to get started.</p>
+            <form id="setup-form" class="space-y-4">
                 <div>
-                    <label for="start-date">Semester Start Date:</label>
-                    <input type="date" id="start-date" required>
+                    <label for="start-date" class="block text-sm font-medium text-gray-700">Semester Start Date:</label>
+                    <input type="date" id="start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 <div>
-                    <label for="min-attendance">Minimum Attendance Percentage:</label>
-                    <input type="number" id="min-attendance" value="75" min="1" max="100" required>
+                    <label for="min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance Percentage:</label>
+                    <input type="number" id="min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 <div>
-                    <label for="timetable-pdf">Upload Timetable (PDF):</label>
-                    <input type="file" id="timetable-pdf" accept=".pdf" required>
+                    <label for="timetable-pdf" class="block text-sm font-medium text-gray-700">Upload Timetable (PDF):</label>
+                    <input type="file" id="timetable-pdf" accept=".pdf" required class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                 </div>
-                <button type="submit">Save and Continue</button>
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-colors duration-300">Save and Continue</button>
             </form>
-            <p id="setup-error" class="error-message"></p>
+            <p id="setup-error" class="error-message text-red-500 mt-4"></p>
         </div>
 
         <!-- Main Dashboard View -->
-        <div id="dashboard-view" class="view" style="display:none;">
+        <div id="dashboard-view" class="view space-y-8" style="display:none;">
             <!-- Attendance Summary Section -->
-            <div id="attendance-summary">
+            <div id="attendance-summary" class="bg-white p-6 rounded-xl shadow-lg">
                 <!-- Detailed Theory/Lab table will be injected here by app.js -->
-                 <p>Your attendance summary will appear here.</p>
+                 <p class="text-center text-gray-500">Your attendance summary will appear here.</p>
             </div>
 
             <!-- Actions Section -->
-            <div id="actions-section">
-                <h2>Mark Attendance</h2>
-                <div class="date-selector">
-                    <label for="historical-date">Select Date:</label>
-                    <input type="date" id="historical-date">
+            <div id="actions-section" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Mark Attendance</h2>
+                <div class="date-selector mb-4">
+                    <label for="historical-date" class="block text-sm font-medium text-gray-700">Select Date:</label>
+                    <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                 </div>
                 <div id="daily-log-container">
                     <!-- Daily log options will be injected here by app.js -->
-                    <p>Select a date to see lecture options.</p>
+                    <p class="text-center text-gray-500">Select a date to see lecture options.</p>
                 </div>
             </div>
             
             <!-- Settings Section -->
-            <div id="settings-section">
-                <h2>Settings</h2>
+            <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
                 <form id="update-timetable-form">
-                    <label for="update-timetable-pdf">Re-upload Timetable (PDF):</label>
-                    <div class="warning">
-                        <p><strong>Warning</strong></p>
+                    <label for="update-timetable-pdf" class="block text-sm font-medium text-gray-700">Re-upload Timetable (PDF):</label>
+                    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 my-2 rounded-md">
+                        <p class="font-bold">Warning</p>
                         <p>Re-uploading will reset all your attendance data.</p>
                     </div>
-                    <input type="file" id="update-timetable-pdf" accept=".pdf" required>
-                    <button type="submit">Update Timetable</button>
+                    <input type="file" id="update-timetable-pdf" accept=".pdf" required class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100">
+                    <button type="submit" class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-colors duration-300">Update Timetable</button>
                 </form>
             </div>
         </div>
