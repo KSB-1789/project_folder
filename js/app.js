@@ -146,40 +146,76 @@ const parseTimetable = (file) => {
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
+                    // We use a space to ensure words from different items don't merge
                     fullText += textContent.items.map(item => item.str).join(' ');
                 }
-                
-                // This is a simplistic parser and might need adjustment for specific PDF formats.
-                const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-                const timetable = {};
+
+                // --- NEW, ROBUST PARSING LOGIC ---
+
+                // 1. Define a list of all possible subjects from your specific timetable.
+                // This makes the parser much more reliable than guessing.
+                // We include variations to catch everything.
+                const potentialSubjects = [
+                    "DA Lab", "DSA Lab", "IoT Lab", // Multi-word subjects first
+                    "DA", "OS", "IoT", "Stats", "DSA",
+                    "Discrete m" // Handle the specific "Discrete m" case
+                ];
+
+                // 2. Find which of these subjects actually exist in the document.
                 const uniqueSubjects = new Set();
-                
-                // A very basic heuristic: find day, then find subjects until next day
-                // This will need to be made much more robust for real-world timetables.
-                // For now, we'll assume a simple structure. Let's create a placeholder.
-                
-                // A more robust parser would analyze the grid layout. For this example, 
-                // we'll use a placeholder structure and extract unique words as potential subjects.
-                const words = fullText.split(/\s+/).filter(w => w.length > 3 && isNaN(w));
-                words.forEach(word => {
-                    if (word.toUpperCase() === word) uniqueSubjects.add(word);
+                potentialSubjects.forEach(subject => {
+                    // Use a regular expression to find the subject as a whole word
+                    const regex = new RegExp(`\\b${subject}\\b`, 'g');
+                    if (fullText.match(regex)) {
+                        // Clean up "Discrete m" to just be "Discrete" for simplicity
+                        const cleanSubject = subject === "Discrete m" ? "Discrete" : subject;
+                        uniqueSubjects.add(cleanSubject);
+                    }
                 });
 
                 if (uniqueSubjects.size === 0) {
-                     reject(new Error("Could not automatically identify subjects. Please ensure the PDF is text-based. For now, we will add dummy subjects."));
-                     // In a real app you'd ask the user to input subjects manually here.
-                     uniqueSubjects.add("MATHS");
-                     uniqueSubjects.add("SCIENCE");
+                    reject(new Error("Could not find any known subjects in the PDF. The PDF format may have changed."));
+                    return;
                 }
 
-                days.forEach(day => {
-                    timetable[day] = Array.from(uniqueSubjects); // Simplified: assumes all subjects might happen every day.
-                });
+                // 3. Use the days of the week as anchors to build the schedule.
+                const timetable = {};
+                const days = ["Mo", "Tu", "We", "Th", "Fr"];
+                const dayFullNames = { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday" };
 
+                // Add a "sentinel" at the end to properly segment the last day (Friday)
+                const textWithSentinel = fullText + " End";
+                const dayRegex = /(Mo|Tu|We|Th|Fr|End)/g;
+
+                // Split the document into chunks based on the days
+                const parts = textWithSentinel.split(dayRegex);
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (days.includes(part)) {
+                        const dayAbbreviation = part;
+                        const dayFullName = dayFullNames[dayAbbreviation];
+                        const daySchedule = [];
+                        
+                        // The text for this day is the next item in the split array
+                        const dayTextContent = parts[i + 1] || "";
+
+                        // Check which subjects appear in this day's text
+                        uniqueSubjects.forEach(subject => {
+                            // The "Discrete" subject was stored clean, but we search for its original form in the text
+                            const searchString = subject === "Discrete" ? "Discrete m" : subject;
+                            if (dayTextContent.includes(searchString)) {
+                                daySchedule.push(subject);
+                            }
+                        });
+                        timetable[dayFullName] = daySchedule;
+                    }
+                }
+                
                 resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjects) });
 
             } catch (err) {
-                reject(new Error(`Failed to parse PDF. Is it a valid, text-based PDF? ${err.message}`));
+                reject(new Error(`Failed to process PDF. ${err.message}`));
             }
         };
         reader.onerror = () => reject(new Error("Failed to read the file."));
