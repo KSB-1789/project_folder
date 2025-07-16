@@ -16,7 +16,7 @@ const updateTimetableForm = document.getElementById('update-timetable-form');
 // --- State ---
 let currentUser = null;
 let userProfile = null;
-let attendanceLog = []; // This will now be a cache of the full log from the DB
+let attendanceLog = [];
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
@@ -43,17 +43,15 @@ const init = async () => {
 
     const { data, profileError } = await supabase.from('profiles').select('*').single();
 
-    if (profileError && profileError.code !== 'PGRST116') { // Ignore 'not found' error
+    if (profileError && profileError.code !== 'PGRST116') {
         hideLoading();
         return console.error('Error fetching profile:', profileError);
     }
 
     if (data) {
         userProfile = data;
-        // This is the core logic engine that makes the app dynamic
         await runFullAttendanceUpdate();
     } else {
-        // First-time user, show the onboarding screen
         hideLoading();
         onboardingView.style.display = 'block';
         dashboardView.style.display = 'none';
@@ -61,54 +59,57 @@ const init = async () => {
 };
 
 /**
- * Orchestrates the entire update and render pipeline. This is the main
- * workflow for a returning user.
+ * Orchestrates the entire update and render pipeline.
  */
 const runFullAttendanceUpdate = async () => {
     showLoading('Updating attendance records...');
-    await populateAttendanceLog(); // Automatically creates lecture records for past days
+    await populateAttendanceLog();
     showLoading('Loading your dashboard...');
-    await loadFullAttendanceLog(); // Loads all records into memory
-    renderDashboard(); // Renders the UI with the fresh data
+    await loadFullAttendanceLog();
+    renderDashboard();
     hideLoading();
 }
 
 /**
+ * FINAL CORRECTED VERSION
  * This is the "automatic daily increment" feature.
- * It checks for days between the last log and today and creates
- * default 'Missed' records for any scheduled lectures.
+ * It uses the clean data from the parser to reliably create records.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of day
+    today.setHours(0, 0, 0, 0);
 
     let lastLog;
     if (userProfile.last_log_date) {
-        lastLog = new Date(userProfile.last_log_date + 'T00:00:00'); // Ensure correct date parsing
+        lastLog = new Date(userProfile.last_log_date + 'T00:00:00');
     } else {
-        // If it's the very first time, start from the day before the semester
         lastLog = new Date(userProfile.start_date);
         lastLog.setDate(lastLog.getDate() - 1);
     }
 
     let currentDate = new Date(lastLog);
-    currentDate.setDate(currentDate.getDate() + 1); // Start checking from the day AFTER the last log
+    currentDate.setDate(currentDate.getDate() + 1);
 
     const newLogEntries = [];
 
     while (currentDate <= today) {
         const dayIndex = currentDate.getDay();
-        if (dayIndex !== 0 && dayIndex !== 6) { // Skip Sunday and Saturday
+        if (dayIndex !== 0 && dayIndex !== 6) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
 
-            for (const subject of lecturesToday) {
+            for (const subjectString of lecturesToday) {
+                // Example subjectString: "OS Theory" or "DA Lab"
+                const parts = subjectString.split(' ');
+                const category = parts.pop();
+                const subject_name = parts.join(' ');
+
                 newLogEntries.push({
                     user_id: currentUser.id,
                     date: new Date(currentDate).toISOString().slice(0, 10),
-                    subject_name: subject.replace(/ (Lab|Theory)$/, ''), // Get base name
-                    category: subject.endsWith('Lab') ? 'Lab' : 'Theory',
-                    status: 'Missed' // Default status is 'Missed'
+                    subject_name: subject_name,
+                    category: category,
+                    status: 'Missed'
                 });
             }
         }
@@ -116,15 +117,13 @@ const populateAttendanceLog = async () => {
     }
 
     if (newLogEntries.length > 0) {
-        // `onConflict` ensures we don't create duplicates if the script is run multiple times for the same day.
-        await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name' });
+        // Add `category` to the conflict resolution to handle Theory/Lab on the same day
+        await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
     }
 
-    // Update the profile with today's date so we don't re-process these days again.
     const { error } = await supabase.from('profiles').update({ last_log_date: today.toISOString().slice(0, 10) }).eq('id', currentUser.id);
     if (error) console.error("Error updating last_log_date", error);
 };
-
 
 /**
  * Fetches the entire attendance log for the user from the database.
@@ -141,8 +140,8 @@ const loadFullAttendanceLog = async () => {
 const renderDashboard = () => {
     renderSummaryTable();
     const todayStr = new Date().toISOString().slice(0, 10);
-    historicalDatePicker.value = todayStr; // Set date picker to today
-    renderScheduleForDate(todayStr); // Render today's schedule by default
+    historicalDatePicker.value = todayStr;
+    renderScheduleForDate(todayStr);
     dashboardView.style.display = 'block';
     onboardingView.style.display = 'none';
 };
@@ -153,7 +152,6 @@ const renderDashboard = () => {
 const renderSummaryTable = () => {
     const subjectStats = {};
 
-    // 1. Aggregate stats from the log
     for (const log of attendanceLog) {
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) {
@@ -170,7 +168,6 @@ const renderSummaryTable = () => {
         }
     }
 
-    // 2. Build the HTML table
     let tableHTML = `
         <h3>Overall Summary</h3>
         <table>
@@ -228,7 +225,6 @@ const renderSummaryTable = () => {
     tableHTML += '</tbody></table>';
     attendanceSummary.innerHTML = tableHTML;
 };
-
 
 /**
  * Renders the interactive attendance logger for a specific date from the local cache.
@@ -294,7 +290,7 @@ const handleSetup = async (e) => {
         if (error) throw error;
         
         userProfile = data;
-        await runFullAttendanceUpdate(); // Run the main logic after setup is complete
+        await runFullAttendanceUpdate();
 
     } catch (error) {
         setupError.textContent = `Error: ${error.message}`;
@@ -304,7 +300,9 @@ const handleSetup = async (e) => {
 };
 
 /**
- * Parses the uploaded PDF to extract the schedule. Tailored for the specific timetable format.
+ * FINAL CORRECTED VERSION
+ * Parses the PDF and stores subjects in a clean "Name Category" format.
+ * Example: "OS Theory", "DA Lab", "Discrete Theory"
  */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
@@ -320,25 +318,10 @@ const parseTimetable = (file) => {
                 }
 
                 const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
-                const subjectMap = {};
-                potentialSubjects.forEach(subject => {
-                    const cleanName = subject.replace(/ m$/, ''); // "Discrete m" -> "Discrete"
-                    const category = subject.endsWith('Lab') ? 'Lab' : 'Theory';
-                    const regex = new RegExp(`\\b${subject}\\b`, 'g');
-                    if (fullText.match(regex)) {
-                        if (!subjectMap[cleanName]) subjectMap[cleanName] = [];
-                        subjectMap[cleanName].push(category);
-                    }
-                });
-                
-                const uniqueSubjects = Object.keys(subjectMap).map(name => {
-                    if (subjectMap[name].length > 1 || subjectMap[name][0] === 'Lab') return `${name} Lab`;
-                    return name;
-                }).filter((value, index, self) => self.indexOf(value) === index);
-
-
+                const uniqueSubjectsFound = new Set();
                 const timetable = {};
                 const days = { Mo: "Monday", Tu: "Tuesday", We: "Wednesday", Th: "Thursday", Fr: "Friday" };
+                
                 const dayRegex = /(Mo|Tu|We|Th|Fr|Timetable generated)/g;
                 const parts = fullText.split(dayRegex);
 
@@ -350,17 +333,27 @@ const parseTimetable = (file) => {
                         const dayTextContent = parts[i + 1] || "";
                         
                         potentialSubjects.forEach(subject => {
-                             if (dayTextContent.includes(subject)) {
-                                 const cleanName = subject.replace(/ m$/, '');
-                                 const category = subject.endsWith('Lab') ? 'Lab' : 'Theory';
-                                 daySchedule.add(`${cleanName} ${category}`);
-                             }
+                            if (dayTextContent.includes(subject)) {
+                                let cleanName = subject.replace(/ m$/, '');
+                                let category = 'Theory';
+                                if (subject.endsWith('Lab')) {
+                                    cleanName = subject.replace(/ Lab$/, '');
+                                    category = 'Lab';
+                                }
+                                
+                                daySchedule.add(`${cleanName} ${category}`);
+                                uniqueSubjectsFound.add(cleanName);
+                            }
                         });
                         timetable[dayFullName] = Array.from(daySchedule);
                     }
                 }
+
+                if (uniqueSubjectsFound.size === 0) {
+                    return reject(new Error("Could not detect any known subjects in the timetable."));
+                }
                 
-                resolve({ timetable, uniqueSubjects: Object.keys(subjectMap) });
+                resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjectsFound) });
 
             } catch (err) {
                 reject(new Error(`Failed to process PDF. ${err.message}`));
@@ -371,11 +364,11 @@ const parseTimetable = (file) => {
     });
 };
 
+
 // --- EVENT HANDLERS ---
 
 /**
  * Handles clicks on the 'Attended'/'Missed'/'Cancelled' buttons.
- * Updates local state for instant UI feedback, then updates the database.
  */
 async function handleMarkAttendance(e) {
     if (!e.target.classList.contains('log-btn')) return;
@@ -386,7 +379,6 @@ async function handleMarkAttendance(e) {
 
     showLoading('Updating...');
 
-    // Update the local cache for instant UI feedback
     const logIndex = attendanceLog.findIndex(log => log.id == logId);
     if (logIndex === -1) {
         hideLoading();
@@ -394,10 +386,8 @@ async function handleMarkAttendance(e) {
     }
     attendanceLog[logIndex].status = newStatus;
     
-    // Re-render the UI from the updated cache
     renderDashboard();
 
-    // Update the database in the background
     const { error } = await supabase.from('attendance_log').update({ status: newStatus }).eq('id', logId);
     if(error) console.error("Error updating log status:", error);
 
@@ -405,7 +395,7 @@ async function handleMarkAttendance(e) {
 }
 
 /**
- * Handles when the user picks a new date from the calendar to view/edit.
+ * Handles when the user picks a new date from the calendar.
  */
 async function handleDateChange(e) {
     renderScheduleForDate(e.target.value);
@@ -420,7 +410,6 @@ async function handleUpdateTimetable(e) {
         return;
     }
     showLoading('Resetting schedule...');
-    // Delete all logs for the user first
     await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
 
     const pdfFile = document.getElementById('update-timetable-pdf').files[0];
@@ -436,13 +425,12 @@ async function handleUpdateTimetable(e) {
             .update({ 
                 timetable_json: timetable, 
                 unique_subjects: uniqueSubjects,
-                last_log_date: null // Reset the log date to force re-population from the start date
+                last_log_date: null
             })
             .eq('id', currentUser.id);
 
         if (error) throw error;
         
-        // Reload everything from scratch with the new timetable
         await init();
 
     } catch (error) {
