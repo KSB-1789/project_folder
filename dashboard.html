@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Smart Attendance Tracker</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/pdf.js"></script>
+    <script>
+        // Required for pdf.js to work
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `js/pdf.worker.js`;
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div id="loading-overlay">
+            <div class="spinner"></div>
+            <p id="loading-text">Loading...</p>
+        </div>
+
+        <div id="app-header">
+            <h1>My Attendance Dashboard</h1>
+            <button id="logout-button">Logout</button>
+        </div>
+
+        <!-- Onboarding View -->
+        <div id="onboarding-view" class="view" style="display:none;">
+            <h2>Initial Setup</h2>
+            <p>Welcome! Please provide the following details to get started.</p>
+            <form id="setup-form">
+                <label for="start-date">Semester Start Date:</label>
+                <input type="date" id="start-date" required>
+
+                <label for="min-attendance">Minimum Attendance Percentage:</label>
+                <input type="number" id="min-attendance" value="75" min="1" max="100" required>
+
+                <label for="timetable-pdf">Upload Timetable (PDF):</label>
+                <input type="file" id="timetable-pdf" accept=".pdf" required>
+
+                <button type="submit">Save and Continue</button>
+            </form>
+            <p id="setup-error" class="error-message"></p>
+        </div>
+
+        <!-- Main Dashboard View -->
+        <div id="dashboard-view" class="view" style="display:none;">
+            <div id="attendance-summary">
+                <!-- Data will be injected here by app.js -->
+            </div>
+
+            <div id="actions-section">
+                <h2>Log Today's Attendance</h2>
+                <div id="daily-log-container">
+                    <!-- Daily log options will be injected here -->
+                </div>
+                 <button id="save-log-button">Save Today's Log</button>
+            </div>
+            
+            <div id="settings-section">
+                <h2>Settings</h2>
+                <form id="update-settings-form">
+                    <label for="update-start-date">Semester Start Date:</label>
+                    <input type="date" id="update-start-date">
+
+                    <label for="update-min-attendance">Minimum Attendance Percentage:</label>
+                    <input type="number" id="update-min-attendance" min="1" max="100">
+
+                    <button type="submit">Update Settings</button>
+                </form>
+                 <form id="update-timetable-form">
+                    <label for="update-timetable-pdf">Re-upload Timetable (PDF):</label>
+                    <input type="file" id="update-timetable-pdf" accept=".pdf" required>
+                    <button type="submit">Update Timetable</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

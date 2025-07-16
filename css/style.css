@@ -1,0 +1,170 @@
+/* General Styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f4f7f6;
+    color: #333;
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    background: #fff;
+    padding: 20px 40px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1, h2 {
+    color: #005f73;
+}
+
+/* Auth Page */
+#auth-form {
+    max-width: 400px;
+    margin: 40px auto;
+    text-align: center;
+}
+
+.form-container input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    box-sizing: border-box;
+}
+
+button {
+    background-color: #0081a7;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #005f73;
+}
+
+.form-container a {
+    color: #0081a7;
+    text-decoration: none;
+}
+
+.error-message {
+    color: #d90429;
+    margin-top: 10px;
+}
+
+/* Dashboard */
+#app-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+
+#logout-button {
+    background-color: #ae2012;
+}
+#logout-button:hover {
+    background-color: #9b2226;
+}
+
+/* Tables */
+#attendance-summary table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+#attendance-summary th, #attendance-summary td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: left;
+}
+
+#attendance-summary th {
+    background-color: #f2f2f2;
+    color: #333;
+}
+
+.low-attendance {
+    background-color: #ffddd2;
+    color: #d90429;
+    font-weight: bold;
+}
+
+/* Forms */
+#onboarding-view form, #settings-section form {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+#onboarding-view label, #settings-section label {
+    font-weight: bold;
+}
+
+#actions-section, #settings-section {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+#daily-log-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+}
+
+.log-item {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+/* Loading Overlay */
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    display: none; /* Hidden by default */
+}
+
+.spinner {
+    border: 8px solid #f3f3f3;
+    border-top: 8px solid #0081a7;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 2s linear infinite;
+}
+
+#loading-overlay p {
+    margin-top: 20px;
+    font-size: 1.2em;
+    color: #333;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
