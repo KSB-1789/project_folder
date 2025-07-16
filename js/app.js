@@ -11,12 +11,21 @@ const setupError = document.getElementById('setup-error');
 const attendanceSummary = document.getElementById('attendance-summary');
 const dailyLogContainer = document.getElementById('daily-log-container');
 const historicalDatePicker = document.getElementById('historical-date');
-const updateTimetableForm = document.getElementById('update-timetable-form');
+const settingsSection = document.getElementById('settings-section');
+
+// --- Onboarding Elements ---
+const addSubjectBtn = document.getElementById('add-subject-btn');
+const newSubjectNameInput = document.getElementById('new-subject-name');
+const newSubjectCategorySelect = document.getElementById('new-subject-category');
+const subjectMasterListUI = document.getElementById('subject-master-list');
+const timetableBuilderUI = document.querySelector('#timetable-builder .grid');
+const resetScheduleBtn = document.getElementById('reset-schedule-btn');
 
 // --- State ---
 let currentUser = null;
 let userProfile = null;
 let attendanceLog = [];
+let setupSubjects = []; // Temporary state for building the timetable
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
@@ -37,11 +46,13 @@ const init = async () => {
     currentUser = session.user;
     const { data, profileError } = await supabase.from('profiles').select('*').single();
     if (profileError && profileError.code !== 'PGRST116') { hideLoading(); return console.error('Error fetching profile:', profileError); }
+    
     if (data) {
         userProfile = data;
         await runFullAttendanceUpdate();
     } else {
         hideLoading();
+        renderOnboardingUI();
         onboardingView.style.display = 'block';
         dashboardView.style.display = 'none';
     }
@@ -58,6 +69,38 @@ const runFullAttendanceUpdate = async () => {
     renderDashboard();
     hideLoading();
 }
+
+/**
+ * NEW: Renders the initial state of the manual timetable builder.
+ */
+const renderOnboardingUI = () => {
+    // Render master subject list
+    subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `
+        <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
+            <span>${sub.name} (${sub.category})</span>
+            <button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button>
+        </li>
+    `).join('');
+
+    // Render the day columns for the builder
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    timetableBuilderUI.innerHTML = days.map(day => `
+        <div class="day-column bg-gray-50 p-3 rounded-lg">
+            <h4 class="font-bold mb-2 text-center">${day}</h4>
+            <div class="flex items-center gap-1 mb-2">
+                <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
+                    <option value="">-- select --</option>
+                    ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
+                </select>
+                <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
+            </div>
+            <ul data-day="${day}" class="day-schedule-list space-y-1">
+                <!-- Classes for this day will be added here -->
+            </ul>
+        </div>
+    `).join('');
+}
+
 
 /**
  * The "automatic daily increment" feature.
@@ -127,9 +170,8 @@ const renderSummaryTable = () => {
         }
     }
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall Subject %</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (Object.keys(subjectStats).length === 0) {
-        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data to display yet.</td></tr>`;
-    } else {
+    if (Object.keys(subjectStats).length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data to display yet.</td></tr>`; }
+    else {
         for (const subjectName of Object.keys(subjectStats).sort()) {
             const stats = subjectStats[subjectName];
             const totalHeld = stats.Theory.Held + stats.Lab.Held;
@@ -171,16 +213,24 @@ const renderScheduleForDate = (dateStr) => {
  */
 const handleSetup = async (e) => {
     e.preventDefault();
-    showLoading('Parsing Timetable...');
+    showLoading('Saving Timetable...');
     setupError.textContent = '';
     const startDate = document.getElementById('start-date').value;
     const minAttendance = document.getElementById('min-attendance').value;
-    const pdfFile = document.getElementById('timetable-pdf').files[0];
-    if (!startDate || !minAttendance || !pdfFile) { setupError.textContent = 'All fields are required.'; hideLoading(); return; }
+    if (!startDate || !minAttendance) { setupError.textContent = 'Please set a start date and attendance percentage.'; hideLoading(); return; }
+
+    // Construct the timetable_json from the UI
+    const timetable_json = {};
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    days.forEach(day => {
+        const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
+        timetable_json[day] = Array.from(classList).map(li => li.dataset.value);
+    });
+
+    const uniqueSubjects = setupSubjects.map(sub => sub.name);
+
     try {
-        const { timetable, uniqueSubjects } = await parseTimetable(pdfFile);
-        showLoading('Saving your profile...');
-        const { data, error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json: timetable, unique_subjects: uniqueSubjects }]).select().single();
+        const { data, error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json: timetable_json, unique_subjects: uniqueSubjects }]).select().single();
         if (error) throw error;
         userProfile = data;
         await runFullAttendanceUpdate();
@@ -191,89 +241,74 @@ const handleSetup = async (e) => {
     }
 };
 
-/**
- * FINAL, ROBUST GEOMETRIC PARSER
- * Rebuilds the timetable grid based on character coordinates.
- */
-const parseTimetable = (file) => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            try {
-                const pdf = await window.pdfjsLib.getDocument({ data: event.target.result }).promise;
-                const page = await pdf.getPage(1);
-                const textContent = await page.getTextContent();
-                const items = textContent.items;
-
-                // Helper to check if two coordinates are "close enough"
-                const isSameLine = (y1, y2) => Math.abs(y1 - y2) < 5;
-
-                // Group text items by their visual row based on Y-coordinate
-                const rows = [];
-                let currentRow = [];
-                for (let i = 0; i < items.length; i++) {
-                    if (currentRow.length === 0) {
-                        currentRow.push(items[i]);
-                    } else {
-                        if (isSameLine(items[i].transform[5], currentRow[0].transform[5])) {
-                            currentRow.push(items[i]);
-                        } else {
-                            rows.push(currentRow.sort((a, b) => a.transform[4] - b.transform[4]));
-                            currentRow = [items[i]];
-                        }
-                    }
-                }
-                rows.push(currentRow.sort((a, b) => a.transform[4] - b.transform[4]));
-
-                const timetable = {};
-                const uniqueSubjectsFound = new Set();
-                const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
-                const dayMap = { 'Mo': 'Monday', 'Tu': 'Tuesday', 'We': 'Wednesday', 'Th': 'Thursday', 'Fr': 'Friday' };
-
-                // Process each visually-reconstructed row
-                for (const rowItems of rows) {
-                    const rowText = rowItems.map(item => item.str).join('');
-                    const dayKey = Object.keys(dayMap).find(key => rowText.startsWith(key));
-
-                    if (dayKey) {
-                        const dayName = dayMap[dayKey];
-                        const daySchedule = new Set();
-                        const cleanRowText = rowText.replace(/\s/g, '');
-
-                        potentialSubjects.forEach(subject => {
-                            const searchSubject = subject.replace(/\s/g, '');
-                            if (cleanRowText.includes(searchSubject)) {
-                                let finalName = subject.replace(/ m$/, '');
-                                let category = 'Theory';
-                                if (subject.endsWith('Lab')) {
-                                    finalName = subject.replace(/ Lab$/, '');
-                                    category = 'Lab';
-                                }
-                                daySchedule.add(`${finalName} ${category}`);
-                                uniqueSubjectsFound.add(finalName);
-                            }
-                        });
-                        timetable[dayName] = Array.from(daySchedule);
-                    }
-                }
-
-                if (uniqueSubjectsFound.size === 0) {
-                    return reject(new Error("Could not detect any known subjects. The PDF might be an image or have an unusual format."));
-                }
-                
-                resolve({ timetable, uniqueSubjects: Array.from(uniqueSubjectsFound) });
-
-            } catch (err) {
-                console.error("PDF Parsing failed:", err);
-                reject(new Error(`Failed to process PDF. ${err.message}`));
-            }
-        };
-        reader.onerror = () => reject(new Error("Failed to read the file."));
-        reader.readAsArrayBuffer(file);
-    });
-};
-
 // --- EVENT HANDLERS ---
+function handleAddSubject() {
+    const name = newSubjectNameInput.value.trim();
+    const category = newSubjectCategorySelect.value;
+    if (!name) { alert("Please enter a subject name."); return; }
+    if (setupSubjects.some(sub => sub.name === name && sub.category === category)) { alert("This subject already exists."); return; }
+    setupSubjects.push({ name, category });
+    newSubjectNameInput.value = '';
+    renderOnboardingUI(); // Re-render the whole onboarding UI to update lists
+}
+
+function handleAddClassToDay(day) {
+    const select = document.querySelector(`.add-class-select[data-day="${day}"]`);
+    const subjectValue = select.value;
+    if (!subjectValue) return;
+
+    const list = document.querySelector(`.day-schedule-list[data-day="${day}"]`);
+    // Prevent duplicates
+    if (Array.from(list.children).some(li => li.dataset.value === subjectValue)) {
+        alert("This class is already scheduled for this day.");
+        return;
+    }
+
+    const li = document.createElement('li');
+    li.className = 'flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded';
+    li.textContent = subjectValue.replace(' Theory', ' (T)').replace(' Lab', ' (L)');
+    li.dataset.value = subjectValue;
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'remove-class-btn text-blue-500 hover:text-blue-700 font-bold';
+    removeBtn.textContent = 'x';
+    li.appendChild(removeBtn);
+    
+    list.appendChild(li);
+}
+
+// --- ATTACH EVENT LISTENERS ---
+document.addEventListener('DOMContentLoaded', init);
+logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
+setupForm.addEventListener('submit', handleSetup);
+
+// Event delegation for dynamically created buttons
+onboardingView.addEventListener('click', (e) => {
+    if (e.target.id === 'add-subject-btn') handleAddSubject();
+    if (e.target.classList.contains('remove-subject-btn')) {
+        const index = e.target.dataset.index;
+        setupSubjects.splice(index, 1);
+        renderOnboardingUI();
+    }
+    if (e.target.classList.contains('add-class-btn')) {
+        const day = e.target.dataset.day;
+        handleAddClassToDay(day);
+    }
+    if (e.target.classList.contains('remove-class-btn')) {
+        e.target.parentElement.remove();
+    }
+});
+
+resetScheduleBtn.addEventListener('click', async () => {
+    if (!confirm("Are you sure? This will delete all your attendance data and allow you to create a new timetable.")) return;
+    showLoading('Resetting...');
+    await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
+    await supabase.from('profiles').delete().eq('id', currentUser.id);
+    hideLoading();
+    window.location.reload();
+});
+
 async function handleMarkAttendance(e) {
     if (!e.target.classList.contains('log-btn')) return;
     const button = e.target;
@@ -290,28 +325,5 @@ async function handleMarkAttendance(e) {
 
 function handleDateChange(e) { renderScheduleForDate(e.target.value); }
 
-async function handleUpdateTimetable(e) {
-    e.preventDefault();
-    if (!confirm("Are you sure? This will reset all your attendance data.")) { return; }
-    showLoading('Resetting schedule...');
-    await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
-    const pdfFile = document.getElementById('update-timetable-pdf').files[0];
-    if (!pdfFile) { hideLoading(); return; }
-    try {
-        const { timetable, uniqueSubjects } = await parseTimetable(pdfFile);
-        await supabase.from('profiles').update({ timetable_json: timetable, unique_subjects: uniqueSubjects, last_log_date: null }).eq('id', currentUser.id);
-        await init();
-    } catch (error) {
-        alert("Failed to update timetable: " + error.message);
-    } finally {
-        hideLoading();
-    }
-}
-
-// --- ATTACH EVENT LISTENERS ---
-document.addEventListener('DOMContentLoaded', init);
-logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
-setupForm.addEventListener('submit', handleSetup);
-updateTimetableForm.addEventListener('submit', handleUpdateTimetable);
-dailyLogContainer.addEventListener('click', handleMarkAttendance);
+dashboardView.addEventListener('click', handleMarkAttendance);
 historicalDatePicker.addEventListener('change', handleDateChange);
