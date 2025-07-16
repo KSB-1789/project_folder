@@ -1,3 +1,6 @@
+
+#### **`js/app.js`**
+```javascript
 import { supabase } from './supabaseClient.js';
 
 // --- DOM Elements ---
@@ -11,14 +14,22 @@ const setupError = document.getElementById('setup-error');
 const attendanceSummary = document.getElementById('attendance-summary');
 const dailyLogContainer = document.getElementById('daily-log-container');
 const historicalDatePicker = document.getElementById('historical-date');
-const settingsSection = document.getElementById('settings-section');
 const saveAttendanceContainer = document.getElementById('save-attendance-container');
+const resetScheduleBtn = document.getElementById('reset-schedule-btn');
+
+// --- Onboarding Elements ---
+const addSubjectBtn = document.getElementById('add-subject-btn');
+const newSubjectNameInput = document.getElementById('new-subject-name');
+const newSubjectCategorySelect = document.getElementById('new-subject-category');
+const subjectMasterListUI = document.getElementById('subject-master-list');
+const timetableBuilderUI = document.querySelector('#timetable-builder .grid');
 
 // --- State ---
 let currentUser = null;
 let userProfile = null;
 let attendanceLog = [];
-let pendingChanges = new Map(); // For batch updates
+let setupSubjects = []; 
+let pendingChanges = new Map();
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
@@ -33,25 +44,24 @@ const hideLoading = () => {
  * Main initialization function.
  */
 const init = async () => {
-    // This function remains the same as the manual builder version
-    showLoading('Authenticating...');
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error || !session) { window.location.href = '/index.html'; return; }
     currentUser = session.user;
     const { data, profileError } = await supabase.from('profiles').select('*').single();
     if (profileError && profileError.code !== 'PGRST116') { hideLoading(); return console.error('Error fetching profile:', profileError); }
+    
     if (data) {
         userProfile = data;
         await runFullAttendanceUpdate();
     } else {
-        // Fallback to onboarding if no profile exists
+        renderOnboardingUI();
+        onboardingView.style.display = 'block';
         hideLoading();
-        window.location.href = '/dashboard.html'; // Or your dedicated onboarding page
     }
 };
 
 /**
- * Main update and render pipeline.
+ * Main update and render pipeline for existing users.
  */
 const runFullAttendanceUpdate = async () => {
     showLoading('Updating attendance records...');
@@ -63,28 +73,48 @@ const runFullAttendanceUpdate = async () => {
 }
 
 /**
- * CORRECTED: The "automatic daily increment" feature.
- * This version fixes the off-by-one error that prevented today's lectures from being created.
+ * Renders the initial state of the manual timetable builder.
+ */
+const renderOnboardingUI = () => {
+    subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `
+        <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
+            <span>${sub.name} (${sub.category})</span>
+            <button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button>
+        </li>
+    `).join('');
+
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    timetableBuilderUI.innerHTML = days.map(day => `
+        <div class="day-column bg-gray-50 p-3 rounded-lg">
+            <h4 class="font-bold mb-2 text-center">${day}</h4>
+            <div class="flex items-center gap-1 mb-2">
+                <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
+                    <option value="">-- select subject --</option>
+                    ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
+                </select>
+                <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
+            </div>
+            <ul data-day="${day}" class="day-schedule-list space-y-1"></ul>
+        </div>
+    `).join('');
+}
+
+
+/**
+ * The "automatic daily increment" feature.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
-    // If last_log_date is null (first time), start from the day before the semester start date.
-    // This ensures the loop correctly includes the start date itself.
     let lastLog = userProfile.last_log_date 
         ? new Date(userProfile.last_log_date + 'T00:00:00') 
         : new Date(new Date(userProfile.start_date).setDate(new Date(userProfile.start_date).getDate() - 1));
-
     let currentDate = new Date(lastLog);
     currentDate.setDate(currentDate.getDate() + 1);
-    
     const newLogEntries = [];
-    
-    // The loop now correctly runs from the day after the last log up to and including today.
     while (currentDate <= today) {
         const dayIndex = currentDate.getDay();
-        if (dayIndex !== 0 && dayIndex !== 6) {
+        if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             for (const subjectString of lecturesToday) {
@@ -96,10 +126,7 @@ const populateAttendanceLog = async () => {
         }
         currentDate.setDate(currentDate.getDate() + 1);
     }
-    
     if (newLogEntries.length > 0) { await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' }); }
-    
-    // Update the profile with today's date so we don't re-process these days again on the next load.
     await supabase.from('profiles').update({ last_log_date: today.toISOString().slice(0, 10) }).eq('id', currentUser.id);
 };
 
@@ -113,7 +140,7 @@ const loadFullAttendanceLog = async () => {
 };
 
 /**
- * Renders the entire dashboard UI.
+ * Renders the main dashboard view.
  */
 const renderDashboard = () => {
     renderSummaryTable();
@@ -125,10 +152,42 @@ const renderDashboard = () => {
 };
 
 /**
- * Renders the summary table with lecture weighting.
+ * NEW: The Bunking Assistant calculation logic.
+ */
+const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
+    const threshold = userProfile.attendance_threshold / 100;
+    const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
+    if (currentPercentage < threshold) {
+        return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all classes to recover!` };
+    }
+    const safeBunks = Math.floor((totalAttended - (threshold * totalHeld)) / threshold);
+    if (safeBunks > 0) {
+        return { status: 'safe', message: `Safe to bunk. You can miss ${safeBunks} more class(es).` };
+    }
+    let remainingThisWeek = 0;
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        const days = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+        for (let i = dayOfWeek; i <= 5; i++) {
+            (userProfile.timetable_json[days[i]] || []).forEach(lecture => {
+                if (lecture.startsWith(subjectName)) { remainingThisWeek++; }
+            });
+        }
+    }
+    const futureHeld = totalHeld + (remainingThisWeek > 0 ? 1 : 0);
+    const neededToAttend = Math.ceil(futureHeld * threshold) - totalAttended;
+    if (neededToAttend <= (remainingThisWeek > 0 ? remainingThisWeek -1 : 0)) {
+        return { status: 'warning', message: `Risky. Bunk now and you must attend the next ${neededToAttend} class(es).` };
+    } else {
+        return { status: 'danger', message: `Cannot bunk. Must attend all upcoming classes.` };
+    }
+}
+
+/**
+ * UPDATED: Renders the summary table with Bunking Assistant.
  */
 const renderSummaryTable = () => {
-    // This function remains the same as the previous correct version.
     const subjectStats = {};
     for (const log of attendanceLog) {
         const baseSubject = log.subject_name;
@@ -140,24 +199,23 @@ const renderSummaryTable = () => {
             if (log.status === 'Attended') { subjectStats[baseSubject][log.category].Attended += weight; }
         }
     }
-    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall Subject %</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
+    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
     if (Object.keys(subjectStats).length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data to display yet.</td></tr>`; }
     else {
         for (const subjectName of Object.keys(subjectStats).sort()) {
             const stats = subjectStats[subjectName];
-            const totalHeld = stats.Theory.Held + stats.Lab.Held;
-            const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
-            const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
+            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
             const hasTheory = stats.Theory.Held > 0;
             const hasLab = stats.Lab.Held > 0;
             const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 whitespace-nowrap font-medium ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}" ${rowSpan}>${overallPercentage}%</td></tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>`}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`}</tr>`;
             }
         }
     }
@@ -169,98 +227,114 @@ const renderSummaryTable = () => {
  * Renders the interactive logger for a specific date.
  */
 const renderScheduleForDate = (dateStr) => {
-    pendingChanges.clear(); // Clear any pending changes when the date changes
-    saveAttendanceContainer.innerHTML = ''; // Hide save button
-
+    pendingChanges.clear();
+    saveAttendanceContainer.innerHTML = '';
     const lecturesOnDate = attendanceLog.filter(log => log.date.slice(0, 10) === dateStr);
     if (lecturesOnDate.length === 0) { dailyLogContainer.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`; return; }
-    
     let logHTML = `<div class="space-y-4">`;
     lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
-        logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <strong class="text-gray-800">${log.subject_name} (${log.category})</strong>
-                        <div class="log-actions flex space-x-2" data-log-id="${log.id}">
-                            <button data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button>
-                            <button data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button>
-                            <button data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button>
-                        </div>
-                    </div>`;
+        logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg"><strong class="text-gray-800">${log.subject_name} (${log.category})</strong><div class="log-actions flex space-x-2" data-log-id="${log.id}"><button data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button><button data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button><button data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button></div></div>`;
     });
     logHTML += `</div>`;
     dailyLogContainer.innerHTML = logHTML;
 };
 
 /**
- * NEW: Handles clicks on attendance buttons locally without refreshing.
+ * Handles the initial user setup form submission.
  */
+const handleSetup = async (e) => {
+    e.preventDefault();
+    showLoading('Saving Timetable...');
+    setupError.textContent = '';
+    const startDate = document.getElementById('start-date').value;
+    const minAttendance = document.getElementById('min-attendance').value;
+    if (!startDate || !minAttendance) { setupError.textContent = 'Please set a start date and attendance percentage.'; hideLoading(); return; }
+    if (setupSubjects.length === 0) { setupError.textContent = 'Please add at least one subject.'; hideLoading(); return; }
+
+    const timetable_json = {};
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    days.forEach(day => {
+        const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
+        timetable_json[day] = Array.from(classList).map(li => li.dataset.value);
+    });
+
+    const uniqueSubjects = [...new Set(setupSubjects.map(sub => sub.name))];
+
+    try {
+        const { data, error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json, unique_subjects: uniqueSubjects }]).select().single();
+        if (error) throw error;
+        userProfile = data;
+        await runFullAttendanceUpdate();
+    } catch (error) {
+        setupError.textContent = `Error: ${error.message}`;
+        console.error(error);
+        hideLoading();
+    }
+};
+
+// --- EVENT HANDLERS ---
+function handleAddSubject() {
+    const name = newSubjectNameInput.value.trim();
+    const category = newSubjectCategorySelect.value;
+    if (!name) { alert("Please enter a subject name."); return; }
+    if (setupSubjects.some(sub => sub.name === name && sub.category === category)) { alert("This specific subject (name and category) already exists."); return; }
+    setupSubjects.push({ name, category });
+    newSubjectNameInput.value = '';
+    renderOnboardingUI();
+}
+
+function handleAddClassToDay(day) {
+    const select = document.querySelector(`.add-class-select[data-day="${day}"]`);
+    const subjectValue = select.value;
+    if (!subjectValue) return;
+    const list = document.querySelector(`.day-schedule-list[data-day="${day}"]`);
+    const li = document.createElement('li');
+    li.className = 'flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded';
+    li.textContent = subjectValue.replace(' Theory', ' (T)').replace(' Lab', ' (L)');
+    li.dataset.value = subjectValue;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2';
+    removeBtn.textContent = 'x';
+    li.appendChild(removeBtn);
+    list.appendChild(li);
+}
+
 function handleMarkAttendance(e) {
     const button = e.target.closest('.log-btn');
     if (!button) return;
-
     const newStatus = button.dataset.status;
     const buttonGroup = button.parentElement;
     const logId = buttonGroup.dataset.logId;
-
-    // Store the change to be saved later
     pendingChanges.set(logId, newStatus);
-
-    // Update button styles instantly
     const allButtons = buttonGroup.querySelectorAll('.log-btn');
-    allButtons.forEach(btn => {
-        btn.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500', 'text-white');
-        btn.classList.add('bg-gray-200', 'text-gray-700');
-    });
-    button.classList.add(...(newStatus === 'Attended' ? ['bg-green-500', 'text-white'] :
-                           newStatus === 'Missed' ? ['bg-red-500', 'text-white'] :
-                           ['bg-yellow-500', 'text-white']));
-    
-    // Show the save button if it's not already visible
+    allButtons.forEach(btn => btn.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500', 'text-white'));
+    button.classList.add(...(newStatus === 'Attended' ? ['bg-green-500', 'text-white'] : newStatus === 'Missed' ? ['bg-red-500', 'text-white'] : ['bg-yellow-500', 'text-white']));
     if (!saveAttendanceContainer.querySelector('button')) {
         saveAttendanceContainer.innerHTML = `<button id="save-attendance-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg">Save Changes</button>`;
     }
 }
 
-/**
- * NEW: Saves all pending changes to the database.
- */
 async function handleSaveChanges() {
     if (pendingChanges.size === 0) return;
-    
     showLoading('Saving...');
-    
-    const updates = Array.from(pendingChanges).map(([id, status]) => ({
-        id: parseInt(id),
-        status: status
-    }));
-
+    const updates = Array.from(pendingChanges).map(([id, status]) => ({ id: parseInt(id), status: status }));
     const { error } = await supabase.from('attendance_log').upsert(updates);
-    
-    if (error) {
-        alert("Error saving changes: " + error.message);
-        hideLoading();
-        return;
-    }
-
+    if (error) { alert("Error saving changes: " + error.message); hideLoading(); return; }
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
-
-    // Instead of re-fetching everything, we can just update our local cache and re-render
     updates.forEach(update => {
         const logIndex = attendanceLog.findIndex(log => log.id === update.id);
-        if (logIndex !== -1) {
-            attendanceLog[logIndex].status = update.status;
-        }
+        if (logIndex !== -1) { attendanceLog[logIndex].status = update.status; }
     });
-
-    renderSummaryTable(); // Re-render the main summary table with new stats
+    renderSummaryTable();
     hideLoading();
 }
 
-// --- EVENT HANDLERS ---
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = Array.from(pendingChanges.keys())[0] ? attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date.slice(0, 10) : e.target.value;
+            e.target.value = attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date.slice(0, 10);
             return;
         }
     }
@@ -268,17 +342,24 @@ function handleDateChange(e) {
 }
 
 // --- ATTACH EVENT LISTENERS ---
-// Use event delegation for all dynamic content
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
-actionsSection.addEventListener('click', (e) => {
-    if (e.target.id === 'save-attendance-btn') {
-        handleSaveChanges();
-    } else {
-        handleMarkAttendance(e);
-    }
+setupForm.addEventListener('submit', handleSetup);
+onboardingView.addEventListener('click', (e) => {
+    if (e.target.id === 'add-subject-btn') handleAddSubject();
+    if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
+    if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
+    if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
+});
+resetScheduleBtn.addEventListener('click', async () => {
+    if (!confirm("Are you sure? This will delete all your attendance data and allow you to create a new timetable.")) return;
+    showLoading('Resetting...');
+    await supabase.from('profiles').delete().eq('id', currentUser.id); // Deleting profile will cascade delete attendance_log
+    hideLoading();
+    window.location.reload();
+});
+dashboardView.addEventListener('click', (e) => {
+    if (e.target.id === 'save-attendance-btn') { handleSaveChanges(); }
+    else if (e.target.closest('.log-actions')) { handleMarkAttendance(e); }
 });
 historicalDatePicker.addEventListener('change', handleDateChange);
-
-// --- The manual setup functions are no longer needed here as they are on a different page ---
-// --- If your onboarding is still in this file, you would keep those functions and listeners ---
