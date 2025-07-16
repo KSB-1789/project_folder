@@ -84,7 +84,7 @@ const renderOnboardingUI = () => {
             <h4 class="font-bold mb-2 text-center">${day}</h4>
             <div class="flex items-center gap-1 mb-2">
                 <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
-                    <option value="">-- select --</option>
+                    <option value="">-- select subject --</option>
                     ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
                 </select>
                 <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
@@ -285,19 +285,44 @@ function handleMarkAttendance(e) {
     }
 }
 
+/**
+ * CORRECTED: Saves all pending changes to the database using parallel updates.
+ */
 async function handleSaveChanges() {
     if (pendingChanges.size === 0) return;
     showLoading('Saving...');
-    const updates = Array.from(pendingChanges).map(([id, status]) => ({ id: parseInt(id), status }));
-    const { error } = await supabase.from('attendance_log').upsert(updates);
-    if (error) { alert("Error saving changes: " + error.message); hideLoading(); return; }
+
+    // Create an array of update promises.
+    const updatePromises = Array.from(pendingChanges).map(([id, status]) =>
+        supabase
+            .from('attendance_log')
+            .update({ status: status }) // The data to update
+            .eq('id', id)              // The row to match
+    );
+
+    // Execute all update promises in parallel.
+    const results = await Promise.all(updatePromises);
+
+    const anyError = results.some(result => result.error);
+
+    if (anyError) {
+        const firstError = results.find(result => result.error).error;
+        alert("An error occurred while saving: " + firstError.message);
+        hideLoading();
+        return;
+    }
+
+    // If successful, update the local cache from the pending changes map
+    for (const [id, status] of pendingChanges) {
+        const logIndex = attendanceLog.findIndex(log => log.id == id);
+        if (logIndex !== -1) {
+            attendanceLog[logIndex].status = status;
+        }
+    }
+    
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
-    updates.forEach(update => {
-        const logIndex = attendanceLog.findIndex(log => log.id === update.id);
-        if (logIndex !== -1) { attendanceLog[logIndex].status = update.status; }
-    });
-    renderSummaryTable();
+    renderSummaryTable(); // Re-render the summary table with new stats
     hideLoading();
 }
 
