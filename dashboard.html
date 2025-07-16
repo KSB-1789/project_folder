@@ -40,8 +40,8 @@
                     <h3 class="font-semibold text-lg mb-2">Step 1: Define Your Subjects</h3>
                     <div class="flex items-end gap-2 mb-4">
                         <div class="flex-grow">
-                            <label for="new-subject-name" class="block text-sm font-medium text-gray-700">Subject Name (e.g., "DSA")</label>
-                            <input type="text" id="new-subject-name" placeholder="Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <label for="new-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label>
+                            <input type="text" id="new-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
                         </div>
                         <div>
                             <label for="new-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
@@ -76,11 +76,22 @@
             </div>
             <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
-                <p class="text-gray-600">To edit your timetable, you must reset all data.</p>
-                <button id="reset-schedule-btn" class="mt-4 w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg">Reset All Data</button>
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Clear Attendance Records</p>
+                        <p class="text-xs text-gray-500 mb-2">This will reset all your "Attended" and "Missed" records but will keep your timetable.</p>
+                        <button id="clear-attendance-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">Clear Attendance</button>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Reset All Data & Edit Timetable</p>
+                        <p class="text-xs text-gray-500 mb-2">This will permanently delete your timetable and all attendance data.</p>
+                        <button id="reset-all-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Reset Everything</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+    
     <script src="js/netlify.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>

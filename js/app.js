@@ -2,22 +2,14 @@ import { supabase } from './supabaseClient.js';
 
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
-const loadingText = document.getElementById('loading-text');
 const logoutButton = document.getElementById('logout-button');
 const onboardingView = document.getElementById('onboarding-view');
 const dashboardView = document.getElementById('dashboard-view');
 const setupForm = document.getElementById('setup-form');
-const setupError = document.getElementById('setup-error');
+const historicalDatePicker = document.getElementById('historical-date');
 const attendanceSummary = document.getElementById('attendance-summary');
 const dailyLogContainer = document.getElementById('daily-log-container');
-const historicalDatePicker = document.getElementById('historical-date');
 const saveAttendanceContainer = document.getElementById('save-attendance-container');
-const resetScheduleBtn = document.getElementById('reset-schedule-btn');
-const addSubjectBtn = document.getElementById('add-subject-btn');
-const newSubjectNameInput = document.getElementById('new-subject-name');
-const newSubjectCategorySelect = document.getElementById('new-subject-category');
-const subjectMasterListUI = document.getElementById('subject-master-list');
-const timetableBuilderUI = document.getElementById('timetable-builder');
 
 // --- State ---
 let currentUser = null;
@@ -28,25 +20,20 @@ let pendingChanges = new Map();
 
 // --- Utility ---
 const showLoading = (message = 'Loading...') => {
+    const loadingText = document.getElementById('loading-text');
     loadingText.textContent = message;
     loadingOverlay.style.display = 'flex';
 };
 const hideLoading = () => {
     loadingOverlay.style.display = 'none';
 };
-
-/**
- * NEW: Timezone-safe date string formatter.
- * @param {Date} date - The date object to format.
- * @returns {string} - The date formatted as "YYYY-MM-DD".
- */
 const toYYYYMMDD = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
-
 
 /**
  * Main initialization function.
@@ -83,6 +70,10 @@ const runFullAttendanceUpdate = async () => {
  * Renders the initial state of the manual timetable builder.
  */
 const renderOnboardingUI = () => {
+    const subjectMasterListUI = document.getElementById('subject-master-list');
+    const timetableBuilderGrid = document.querySelector('#timetable-builder .grid');
+    if (!subjectMasterListUI || !timetableBuilderGrid) return; // Guard clause
+
     subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `
         <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
             <span>${sub.name} (${sub.category})</span>
@@ -91,31 +82,26 @@ const renderOnboardingUI = () => {
     `).join('');
 
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const builderGrid = timetableBuilderUI.querySelector('.grid');
-    builderGrid.innerHTML = days.map(day => `
+    timetableBuilderGrid.innerHTML = days.map(day => `
         <div class="day-column bg-gray-50 p-3 rounded-lg">
             <h4 class="font-bold mb-2 text-center">${day}</h4>
             <div class="flex items-center gap-1 mb-2">
                 <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
-                    <option value="">-- select subject --</option>
+                    <option value="">-- select --</option>
                     ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
                 </select>
                 <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
             </div>
-            <ul data-day="${day}" class="day-schedule-list space-y-1"></ul>
+            <ul data-day="${day}" class="day-schedule-list space-y-1 min-h-[50px]"></ul>
         </div>
     `).join('');
 };
 
-
-/**
- * UPDATED: Automatically creates lecture records using the timezone-safe formatter.
- */
 const populateAttendanceLog = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let lastLog = userProfile.last_log_date 
-        ? new Date(userProfile.last_log_date + 'T00:00:00') 
+        ? new Date(userProfile.last_log_date + 'T00:00:00Z') // Assume UTC from DB
         : new Date(new Date(userProfile.start_date).setDate(new Date(userProfile.start_date).getDate() - 1));
     let currentDate = new Date(lastLog);
     currentDate.setDate(currentDate.getDate() + 1);
@@ -140,13 +126,13 @@ const populateAttendanceLog = async () => {
 
 const loadFullAttendanceLog = async () => {
     const { data, error } = await supabase.from('attendance_log').select('*').order('date', { ascending: false });
-    if (error) return console.error("Error fetching attendance log:", error);
-    attendanceLog = data;
+    if (error) { console.error("Error fetching attendance log:", error); attendanceLog = []; }
+    else { attendanceLog = data; }
 };
 
 const renderDashboard = () => {
     renderSummaryTable();
-    const todayStr = toYYYYMMDD(new Date()); // Use timezone-safe formatter
+    const todayStr = toYYYYMMDD(new Date());
     historicalDatePicker.value = todayStr;
     renderScheduleForDate(todayStr);
     dashboardView.style.display = 'block';
@@ -156,9 +142,9 @@ const renderDashboard = () => {
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
     const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
-    if (currentPercentage < threshold) { return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all classes!` }; }
+    if (currentPercentage < threshold) { return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all!` }; }
     const safeBunks = Math.floor((totalAttended - (threshold * totalHeld)) / threshold);
-    if (safeBunks > 0) { return { status: 'safe', message: `Safe to bunk. You can miss ${safeBunks} more.` }; }
+    if (safeBunks > 0) { return { status: 'safe', message: `Safe. You can miss ${safeBunks} more.` }; }
     let remainingThisWeek = 0;
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -172,11 +158,12 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     }
     const weight = (subjectName === 'DA' || subjectName === 'DSA' || (userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]] || []).some(s => s.startsWith(subjectName) && s.endsWith('Lab'))) ? 2 : 1;
     const futureHeld = totalHeld + (remainingThisWeek * weight);
-    const neededToAttend = Math.ceil(futureHeld * threshold) - totalAttended;
-    if (neededToAttend <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
-        return { status: 'warning', message: `Risky. Bunk now and you must attend the next ${Math.ceil(neededToAttend/weight)} class(es).` };
+    const attendedToMaintain = Math.ceil(futureHeld * threshold);
+    const neededToAttendFromNow = attendedToMaintain - totalAttended;
+    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
+        return { status: 'warning', message: `Risky. Bunk now & you must attend the next ${Math.ceil(neededToAttendFromNow/weight)}.` };
     } else {
-        return { status: 'danger', message: `Cannot bunk. Must attend all upcoming classes.` };
+        return { status: 'danger', message: `Cannot bunk. Must attend all.` };
     }
 };
 
@@ -193,14 +180,23 @@ const renderSummaryTable = () => {
         }
     }
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (Object.keys(subjectStats).length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data.</td></tr>`; }
+    if (Object.keys(subjectStats).length === 0 && userProfile.unique_subjects.length > 0) {
+        userProfile.unique_subjects.forEach(subjectName => {
+            const hasTheory = userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s=>s === `${subjectName} Theory`);
+            const hasLab = userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s=>s === `${subjectName} Lab`);
+            if(hasTheory) tableHTML += `<tr><td class="px-6 py-4">${subjectName}</td><td class="px-6 py-4">Theory</td><td class="px-6 py-4">0</td><td class="px-6 py-4">0</td><td class="px-6 py-4">100.0%</td><td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-green-100 text-green-800">Ready to start!</div></td></tr>`;
+            if(hasLab) tableHTML += `<tr><td class="px-6 py-4">${subjectName}</td><td class="px-6 py-4">Lab</td><td class="px-6 py-4">0</td><td class="px-6 py-4">0</td><td class="px-6 py-4">100.0%</td><td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-green-100 text-green-800">Ready to start!</div></td></tr>`;
+        });
+    } else if (Object.keys(subjectStats).length === 0) {
+        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data.</td></tr>`;
+    }
     else {
         for (const subjectName of Object.keys(subjectStats).sort()) {
             const stats = subjectStats[subjectName];
             const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
             const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-            const hasTheory = stats.Theory.Held > 0 || (userProfile.unique_subjects.includes(subjectName) && !userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s => s === `${subjectName} Lab`));
-            const hasLab = stats.Lab.Held > 0 || userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s => s === `${subjectName} Lab`);
+            const hasTheory = stats.Theory.Held > 0 || setupSubjects.some(s=>s.name === subjectName && s.category === 'Theory');
+            const hasLab = stats.Lab.Held > 0 || setupSubjects.some(s=>s.name === subjectName && s.category === 'Lab');
             const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
@@ -232,6 +228,7 @@ const renderScheduleForDate = (dateStr) => {
 const handleSetup = async (e) => {
     e.preventDefault();
     showLoading('Saving Timetable...');
+    const setupError = document.getElementById('setup-error');
     setupError.textContent = '';
     const startDate = document.getElementById('start-date').value;
     const minAttendance = document.getElementById('min-attendance').value;
@@ -258,6 +255,8 @@ const handleSetup = async (e) => {
 
 // --- EVENT HANDLERS ---
 function handleAddSubject() {
+    const newSubjectNameInput = document.getElementById('new-subject-name');
+    const newSubjectCategorySelect = document.getElementById('new-subject-category');
     const name = newSubjectNameInput.value.trim();
     const category = newSubjectCategorySelect.value;
     if (!name) { alert("Please enter a subject name."); return; }
@@ -326,7 +325,7 @@ async function handleSaveChanges() {
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
+            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date + 'T00:00:00Z'));
             return;
         }
     }
@@ -343,15 +342,21 @@ onboardingView.addEventListener('click', (e) => {
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
 });
-resetScheduleBtn.addEventListener('click', async () => {
-    if (!confirm("Are you sure? This will delete all your attendance data and allow you to create a new timetable.")) return;
-    showLoading('Resetting...');
-    await supabase.from('profiles').delete().eq('id', currentUser.id);
-    hideLoading();
-    window.location.reload();
-});
-dashboardView.addEventListener('click', (e) => {
+
+dashboardView.addEventListener('click', async (e) => {
     if (e.target.id === 'save-attendance-btn') { handleSaveChanges(); }
     else if (e.target.closest('.log-actions')) { handleMarkAttendance(e); }
+    else if (e.target.id === 'clear-attendance-btn') {
+        if (!confirm("Are you sure? This will reset all attendance records to 'Missed' but will keep your timetable.")) return;
+        showLoading('Clearing records...');
+        await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
+        await supabase.from('profiles').update({ last_log_date: null }).eq('id', currentUser.id);
+        window.location.reload();
+    } else if (e.target.id === 'reset-all-btn') {
+        if (!confirm("DANGER: This will permanently delete your timetable and all attendance data. Are you sure?")) return;
+        showLoading('Resetting everything...');
+        await supabase.from('profiles').delete().eq('id', currentUser.id);
+        window.location.reload();
+    }
 });
 historicalDatePicker.addEventListener('change', handleDateChange);
