@@ -28,8 +28,7 @@ const hideLoading = () => {
 };
 
 /**
- * Main initialization function. Authenticates the user, fetches their
- * profile, and kicks off the entire dashboard rendering process.
+ * Main initialization function.
  */
 const init = async () => {
     showLoading('Authenticating...');
@@ -59,7 +58,7 @@ const init = async () => {
 };
 
 /**
- * Orchestrates the entire update and render pipeline.
+ * Main update and render pipeline.
  */
 const runFullAttendanceUpdate = async () => {
     showLoading('Updating attendance records...');
@@ -72,7 +71,6 @@ const runFullAttendanceUpdate = async () => {
 
 /**
  * The "automatic daily increment" feature.
- * It uses the clean data from the parser to reliably create records.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
@@ -123,7 +121,7 @@ const populateAttendanceLog = async () => {
 };
 
 /**
- * Fetches the entire attendance log for the user from the database.
+ * Fetches the entire attendance log.
  */
 const loadFullAttendanceLog = async () => {
     const { data, error } = await supabase.from('attendance_log').select('*').order('date', { ascending: false });
@@ -144,7 +142,7 @@ const renderDashboard = () => {
 };
 
 /**
- * Calculates all stats from the local attendanceLog and renders the summary table.
+ * Renders the detailed summary table.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
@@ -152,10 +150,7 @@ const renderSummaryTable = () => {
     for (const log of attendanceLog) {
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) {
-            subjectStats[baseSubject] = {
-                Theory: { Attended: 0, Held: 0 },
-                Lab: { Attended: 0, Held: 0 }
-            };
+            subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
         }
         if (log.status !== 'Cancelled') {
             subjectStats[baseSubject][log.category].Held++;
@@ -166,89 +161,76 @@ const renderSummaryTable = () => {
     }
 
     let tableHTML = `
-        <h3>Overall Summary</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Subject</th>
-                    <th>Category</th>
-                    <th>Attended</th>
-                    <th>Held</th>
-                    <th>Percentage</th>
-                    <th>Overall Subject %</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
+        <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Overall Subject %</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">`;
 
-    for (const subjectName of Object.keys(subjectStats).sort()) {
-        const stats = subjectStats[subjectName];
-        const totalHeld = stats.Theory.Held + stats.Lab.Held;
-        const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
-        const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
-        
-        const hasTheory = stats.Theory.Held > 0;
-        const hasLab = stats.Lab.Held > 0;
-        const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
+    if (Object.keys(subjectStats).length === 0) {
+        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data to display yet.</td></tr>`;
+    } else {
+        for (const subjectName of Object.keys(subjectStats).sort()) {
+            const stats = subjectStats[subjectName];
+            const totalHeld = stats.Theory.Held + stats.Lab.Held;
+            const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
+            const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
+            
+            const hasTheory = stats.Theory.Held > 0;
+            const hasLab = stats.Lab.Held > 0;
+            const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
 
-        if (hasTheory) {
-            const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-            tableHTML += `
-                <tr class="${percentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">
-                    <td ${rowSpan}>${subjectName}</td>
-                    <td>Theory</td>
-                    <td>${stats.Theory.Attended}</td>
-                    <td>${stats.Theory.Held}</td>
-                    <td>${percentage}%</td>
-                    <td ${rowSpan} class="${overallPercentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">${overallPercentage}%</td>
-                </tr>
-            `;
-        }
-        if (hasLab) {
-            const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-             tableHTML += `
-                <tr class="${percentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">
-                    ${hasTheory ? '' : `<td>${subjectName}</td>`}
-                    <td>Lab</td>
-                    <td>${stats.Lab.Attended}</td>
-                    <td>${stats.Lab.Held}</td>
-                    <td>${percentage}%</td>
-                    ${hasTheory ? '' : `<td class="${overallPercentage < userProfile.attendance_threshold ? 'low-attendance' : ''}">${overallPercentage}%</td>`}
-                </tr>
-            `;
+            if (hasTheory) {
+                const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 whitespace-nowrap font-medium ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}" ${rowSpan}>${overallPercentage}%</td></tr>`;
+            }
+            if (hasLab) {
+                const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
+                 tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>`}</tr>`;
+            }
         }
     }
 
-    tableHTML += '</tbody></table>';
+    tableHTML += '</tbody></table></div>';
     attendanceSummary.innerHTML = tableHTML;
 };
 
+
 /**
- * Renders the interactive attendance logger for a specific date.
+ * Renders the interactive logger for a specific date.
  */
 const renderScheduleForDate = (dateStr) => {
     const lecturesOnDate = attendanceLog.filter(log => log.date.slice(0, 10) === dateStr);
 
     if (lecturesOnDate.length === 0) {
-        dailyLogContainer.innerHTML = `<p>No classes scheduled for this day.</p>`;
+        dailyLogContainer.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`;
         return;
     }
 
-    let logHTML = `<h3>Schedule for ${dateStr}</h3>`;
+    let logHTML = `<div class="space-y-4">`;
     lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
-        logHTML += `
-            <div class="log-item">
-                <strong>${log.subject_name} (${log.category})</strong>
-                <div class="log-actions">
-                    <button data-id="${log.id}" data-status="Attended" class="log-btn ${log.status === 'Attended' ? 'active' : ''}">Attended</button>
-                    <button data-id="${log.id}" data-status="Missed" class="log-btn ${log.status === 'Missed' ? 'active' : ''}">Missed</button>
-                    <button data-id="${log.id}" data-status="Cancelled" class="log-btn ${log.status === 'Cancelled' ? 'active' : ''}">Cancelled</button>
-                </div>
-            </div>
-        `;
+        logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <strong class="text-gray-800">${log.subject_name} (${log.category})</strong>
+                        <div class="log-actions flex space-x-2">
+                            <button data-id="${log.id}" data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button>
+                            <button data-id="${log.id}" data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button>
+                            <button data-id="${log.id}" data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button>
+                        </div>
+                    </div>`;
     });
+    logHTML += `</div>`;
     dailyLogContainer.innerHTML = logHTML;
 };
+
 
 /**
  * Handles the initial user setup form submission.
@@ -275,11 +257,8 @@ const handleSetup = async (e) => {
         const { data, error } = await supabase
             .from('profiles')
             .insert([{
-                id: currentUser.id,
-                start_date: startDate,
-                attendance_threshold: parseInt(minAttendance),
-                timetable_json: timetable,
-                unique_subjects: uniqueSubjects
+                id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance),
+                timetable_json: timetable, unique_subjects: uniqueSubjects
             }])
             .select()
             .single();
@@ -297,34 +276,33 @@ const handleSetup = async (e) => {
 };
 
 /**
- * FINAL CORRECTED VERSION
- * Parses the PDF by finding the index of day markers, which is more robust
- * than splitting the text. It stores subjects in a clean "Name Category" format.
+ * FINAL CORRECTED PARSER
+ * This version is "space-agnostic" to defend against PDF text fragmentation.
  */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const pdf = await pdfjsLib.getDocument({ data: event.target.result }).promise;
-                let fullText = '';
+                // `window.pdfjsLib` is used here, which you correctly set up in your HTML.
+                const pdf = await window.pdfjsLib.getDocument({ data: event.target.result }).promise;
+                let textItems = [];
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    fullText += textContent.items.map(item => item.str).join(' ');
+                    textItems.push(...textContent.items.map(item => item.str));
                 }
+                
+                let fullText = textItems.join(''); // Join with NO spaces to handle fragmentation.
+                fullText = fullText.replace(/\s+/g, ''); // Remove any lingering whitespace.
 
                 const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
                 const uniqueSubjectsFound = new Set();
                 const timetable = {};
 
                 const dayMarkers = [
-                    { key: 'Mo', name: 'Monday' },
-                    { key: 'Tu', name: 'Tuesday' },
-                    { key: 'We', name: 'Wednesday' },
-                    { key: 'Th', name: 'Thursday' },
-                    { key: 'Fr', name: 'Friday' },
-                    { key: 'Timetable generated', name: 'End' } // Sentinel to mark the end
+                    { key: 'Mo', name: 'Monday' }, { key: 'Tu', name: 'Tuesday' }, { key: 'We', name: 'Wednesday' },
+                    { key: 'Th', name: 'Thursday' }, { key: 'Fr', name: 'Friday' }, { key: 'Timetablegenerated', name: 'End' } // Spaceless key
                 ];
 
                 const anchors = [];
@@ -335,8 +313,11 @@ const parseTimetable = (file) => {
                     }
                 }
 
-                // Sort anchors by their position in the text
                 anchors.sort((a, b) => a.index - b.index);
+
+                if (anchors.length <= 1) {
+                     return reject(new Error("Could not find day markers (Mo, Tu, etc.) in the PDF."));
+                }
 
                 for (let i = 0; i < anchors.length - 1; i++) {
                     const currentAnchor = anchors[i];
@@ -345,15 +326,16 @@ const parseTimetable = (file) => {
                     const daySchedule = new Set();
                     
                     potentialSubjects.forEach(subject => {
-                        if (dayTextContent.includes(subject)) {
-                            let cleanName = subject.replace(/ m$/, '');
+                        const cleanSubject = subject.replace(/\s/g, '');
+                        if (dayTextContent.includes(cleanSubject)) {
+                            let finalName = subject.replace(/ m$/, '');
                             let category = 'Theory';
                             if (subject.endsWith('Lab')) {
-                                cleanName = subject.replace(/ Lab$/, '');
+                                finalName = subject.replace(/ Lab$/, '');
                                 category = 'Lab';
                             }
-                            daySchedule.add(`${cleanName} ${category}`);
-                            uniqueSubjectsFound.add(cleanName);
+                            daySchedule.add(`${finalName} ${category}`);
+                            uniqueSubjectsFound.add(finalName);
                         }
                     });
                     timetable[currentAnchor.name] = Array.from(daySchedule);
@@ -378,68 +360,39 @@ const parseTimetable = (file) => {
 // --- EVENT HANDLERS ---
 async function handleMarkAttendance(e) {
     if (!e.target.classList.contains('log-btn')) return;
-
     const button = e.target;
     const logId = button.dataset.id;
     const newStatus = button.dataset.status;
-
     showLoading('Updating...');
-
     const logIndex = attendanceLog.findIndex(log => log.id == logId);
-    if (logIndex === -1) {
-        hideLoading();
-        return console.error("Log ID not found in cache.");
-    }
+    if (logIndex === -1) { hideLoading(); return; }
     attendanceLog[logIndex].status = newStatus;
-    
     renderDashboard();
-
-    const { error } = await supabase.from('attendance_log').update({ status: newStatus }).eq('id', logId);
-    if(error) console.error("Error updating log status:", error);
-
+    await supabase.from('attendance_log').update({ status: newStatus }).eq('id', logId);
     hideLoading();
 }
 
-async function handleDateChange(e) {
+function handleDateChange(e) {
     renderScheduleForDate(e.target.value);
 }
 
 async function handleUpdateTimetable(e) {
     e.preventDefault();
-    if (!confirm("Are you sure? This will delete all existing attendance records and reset your schedule.")) {
-        return;
-    }
+    if (!confirm("Are you sure? This will reset all your attendance data.")) { return; }
     showLoading('Resetting schedule...');
     await supabase.from('attendance_log').delete().eq('user_id', currentUser.id);
-
     const pdfFile = document.getElementById('update-timetable-pdf').files[0];
-    if (!pdfFile) {
-        hideLoading();
-        return;
-    }
-
+    if (!pdfFile) { hideLoading(); return; }
     try {
         const { timetable, uniqueSubjects } = await parseTimetable(pdfFile);
-        const { error } = await supabase
-            .from('profiles')
-            .update({ 
-                timetable_json: timetable, 
-                unique_subjects: uniqueSubjects,
-                last_log_date: null
-            })
-            .eq('id', currentUser.id);
-
-        if (error) throw error;
-        
+        await supabase.from('profiles').update({ timetable_json: timetable, unique_subjects: uniqueSubjects, last_log_date: null }).eq('id', currentUser.id);
         await init();
-
     } catch (error) {
         alert("Failed to update timetable: " + error.message);
     } finally {
         hideLoading();
     }
 }
-
 
 // --- ATTACH EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', init);
