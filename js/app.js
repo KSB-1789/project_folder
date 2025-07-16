@@ -1,6 +1,3 @@
-
-#### **`js/app.js`**
-```javascript
 import { supabase } from './supabaseClient.js';
 
 // --- DOM Elements ---
@@ -16,13 +13,11 @@ const dailyLogContainer = document.getElementById('daily-log-container');
 const historicalDatePicker = document.getElementById('historical-date');
 const saveAttendanceContainer = document.getElementById('save-attendance-container');
 const resetScheduleBtn = document.getElementById('reset-schedule-btn');
-
-// --- Onboarding Elements ---
 const addSubjectBtn = document.getElementById('add-subject-btn');
 const newSubjectNameInput = document.getElementById('new-subject-name');
 const newSubjectCategorySelect = document.getElementById('new-subject-category');
 const subjectMasterListUI = document.getElementById('subject-master-list');
-const timetableBuilderUI = document.querySelector('#timetable-builder .grid');
+const timetableBuilderUI = document.getElementById('timetable-builder');
 
 // --- State ---
 let currentUser = null;
@@ -31,7 +26,7 @@ let attendanceLog = [];
 let setupSubjects = []; 
 let pendingChanges = new Map();
 
-// --- Utility Functions ---
+// --- Utility ---
 const showLoading = (message = 'Loading...') => {
     loadingText.textContent = message;
     loadingOverlay.style.display = 'flex';
@@ -49,7 +44,6 @@ const init = async () => {
     currentUser = session.user;
     const { data, profileError } = await supabase.from('profiles').select('*').single();
     if (profileError && profileError.code !== 'PGRST116') { hideLoading(); return console.error('Error fetching profile:', profileError); }
-    
     if (data) {
         userProfile = data;
         await runFullAttendanceUpdate();
@@ -70,7 +64,7 @@ const runFullAttendanceUpdate = async () => {
     await loadFullAttendanceLog();
     renderDashboard();
     hideLoading();
-}
+};
 
 /**
  * Renders the initial state of the manual timetable builder.
@@ -84,12 +78,13 @@ const renderOnboardingUI = () => {
     `).join('');
 
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    timetableBuilderUI.innerHTML = days.map(day => `
+    const builderGrid = timetableBuilderUI.querySelector('.grid');
+    builderGrid.innerHTML = days.map(day => `
         <div class="day-column bg-gray-50 p-3 rounded-lg">
             <h4 class="font-bold mb-2 text-center">${day}</h4>
             <div class="flex items-center gap-1 mb-2">
                 <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
-                    <option value="">-- select subject --</option>
+                    <option value="">-- select --</option>
                     ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
                 </select>
                 <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
@@ -97,11 +92,10 @@ const renderOnboardingUI = () => {
             <ul data-day="${day}" class="day-schedule-list space-y-1"></ul>
         </div>
     `).join('');
-}
-
+};
 
 /**
- * The "automatic daily increment" feature.
+ * Automatically creates lecture records for past days.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
@@ -121,7 +115,7 @@ const populateAttendanceLog = async () => {
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
-                newLogEntries.push({ user_id: currentUser.id, date: new Date(currentDate).toISOString().slice(0, 10), subject_name: subject_name, category: category, status: 'Missed' });
+                newLogEntries.push({ user_id: currentUser.id, date: new Date(currentDate).toISOString().slice(0, 10), subject_name, category, status: 'Missed' });
             }
         }
         currentDate.setDate(currentDate.getDate() + 1);
@@ -130,18 +124,12 @@ const populateAttendanceLog = async () => {
     await supabase.from('profiles').update({ last_log_date: today.toISOString().slice(0, 10) }).eq('id', currentUser.id);
 };
 
-/**
- * Fetches the entire attendance log.
- */
 const loadFullAttendanceLog = async () => {
     const { data, error } = await supabase.from('attendance_log').select('*').order('date', { ascending: false });
     if (error) return console.error("Error fetching attendance log:", error);
     attendanceLog = data;
 };
 
-/**
- * Renders the main dashboard view.
- */
 const renderDashboard = () => {
     renderSummaryTable();
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -151,19 +139,12 @@ const renderDashboard = () => {
     onboardingView.style.display = 'none';
 };
 
-/**
- * NEW: The Bunking Assistant calculation logic.
- */
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
     const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
-    if (currentPercentage < threshold) {
-        return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all classes to recover!` };
-    }
+    if (currentPercentage < threshold) { return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all classes!` }; }
     const safeBunks = Math.floor((totalAttended - (threshold * totalHeld)) / threshold);
-    if (safeBunks > 0) {
-        return { status: 'safe', message: `Safe to bunk. You can miss ${safeBunks} more class(es).` };
-    }
+    if (safeBunks > 0) { return { status: 'safe', message: `Safe to bunk. You can miss ${safeBunks} more.` }; }
     let remainingThisWeek = 0;
     const today = new Date();
     const dayOfWeek = today.getDay();
@@ -175,18 +156,16 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
             });
         }
     }
-    const futureHeld = totalHeld + (remainingThisWeek > 0 ? 1 : 0);
+    const weight = (subjectName === 'DA' || subjectName === 'DSA' || (userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]] || []).some(s => s.startsWith(subjectName) && s.endsWith('Lab'))) ? 2 : 1;
+    const futureHeld = totalHeld + (remainingThisWeek * weight);
     const neededToAttend = Math.ceil(futureHeld * threshold) - totalAttended;
-    if (neededToAttend <= (remainingThisWeek > 0 ? remainingThisWeek -1 : 0)) {
-        return { status: 'warning', message: `Risky. Bunk now and you must attend the next ${neededToAttend} class(es).` };
+    if (neededToAttend <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
+        return { status: 'warning', message: `Risky. Bunk now and you must attend the next ${Math.ceil(neededToAttend/weight)} class(es).` };
     } else {
         return { status: 'danger', message: `Cannot bunk. Must attend all upcoming classes.` };
     }
-}
+};
 
-/**
- * UPDATED: Renders the summary table with Bunking Assistant.
- */
 const renderSummaryTable = () => {
     const subjectStats = {};
     for (const log of attendanceLog) {
@@ -200,22 +179,22 @@ const renderSummaryTable = () => {
         }
     }
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (Object.keys(subjectStats).length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data to display yet.</td></tr>`; }
+    if (Object.keys(subjectStats).length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No attendance data.</td></tr>`; }
     else {
         for (const subjectName of Object.keys(subjectStats).sort()) {
             const stats = subjectStats[subjectName];
             const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
             const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-            const hasTheory = stats.Theory.Held > 0;
-            const hasLab = stats.Lab.Held > 0;
+            const hasTheory = stats.Theory.Held > 0 || (setupSubjects.some(s=>s.name === subjectName && s.category === 'Theory'));
+            const hasLab = stats.Lab.Held > 0 || (setupSubjects.some(s=>s.name === subjectName && s.category === 'Lab'));
             const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500 font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`}</tr>`;
             }
         }
     }
@@ -223,9 +202,6 @@ const renderSummaryTable = () => {
     attendanceSummary.innerHTML = tableHTML;
 };
 
-/**
- * Renders the interactive logger for a specific date.
- */
 const renderScheduleForDate = (dateStr) => {
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
@@ -239,9 +215,6 @@ const renderScheduleForDate = (dateStr) => {
     dailyLogContainer.innerHTML = logHTML;
 };
 
-/**
- * Handles the initial user setup form submission.
- */
 const handleSetup = async (e) => {
     e.preventDefault();
     showLoading('Saving Timetable...');
@@ -250,16 +223,13 @@ const handleSetup = async (e) => {
     const minAttendance = document.getElementById('min-attendance').value;
     if (!startDate || !minAttendance) { setupError.textContent = 'Please set a start date and attendance percentage.'; hideLoading(); return; }
     if (setupSubjects.length === 0) { setupError.textContent = 'Please add at least one subject.'; hideLoading(); return; }
-
     const timetable_json = {};
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     days.forEach(day => {
         const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
         timetable_json[day] = Array.from(classList).map(li => li.dataset.value);
     });
-
     const uniqueSubjects = [...new Set(setupSubjects.map(sub => sub.name))];
-
     try {
         const { data, error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json, unique_subjects: uniqueSubjects }]).select().single();
         if (error) throw error;
@@ -318,7 +288,7 @@ function handleMarkAttendance(e) {
 async function handleSaveChanges() {
     if (pendingChanges.size === 0) return;
     showLoading('Saving...');
-    const updates = Array.from(pendingChanges).map(([id, status]) => ({ id: parseInt(id), status: status }));
+    const updates = Array.from(pendingChanges).map(([id, status]) => ({ id: parseInt(id), status }));
     const { error } = await supabase.from('attendance_log').upsert(updates);
     if (error) { alert("Error saving changes: " + error.message); hideLoading(); return; }
     pendingChanges.clear();
@@ -346,7 +316,7 @@ document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 setupForm.addEventListener('submit', handleSetup);
 onboardingView.addEventListener('click', (e) => {
-    if (e.target.id === 'add-subject-btn') handleAddSubject();
+    if (e.target.id === 'add-subject-btn') { handleAddSubject(); }
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
@@ -354,7 +324,7 @@ onboardingView.addEventListener('click', (e) => {
 resetScheduleBtn.addEventListener('click', async () => {
     if (!confirm("Are you sure? This will delete all your attendance data and allow you to create a new timetable.")) return;
     showLoading('Resetting...');
-    await supabase.from('profiles').delete().eq('id', currentUser.id); // Deleting profile will cascade delete attendance_log
+    await supabase.from('profiles').delete().eq('id', currentUser.id);
     hideLoading();
     window.location.reload();
 });
