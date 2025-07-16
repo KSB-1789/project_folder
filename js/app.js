@@ -204,7 +204,6 @@ const renderSummaryTable = () => {
     attendanceSummary.innerHTML = tableHTML;
 };
 
-
 /**
  * Renders the interactive logger for a specific date.
  */
@@ -230,7 +229,6 @@ const renderScheduleForDate = (dateStr) => {
     logHTML += `</div>`;
     dailyLogContainer.innerHTML = logHTML;
 };
-
 
 /**
  * Handles the initial user setup form submission.
@@ -276,8 +274,8 @@ const handleSetup = async (e) => {
 };
 
 /**
- * FINAL CORRECTED PARSER
- * This version is "space-agnostic" to defend against PDF text fragmentation.
+ * FINAL, ROBUST PARSER
+ * This version uses a completely new strategy that is immune to text fragmentation.
  */
 const parseTimetable = (file) => {
     return new Promise((resolve, reject) => {
@@ -290,11 +288,11 @@ const parseTimetable = (file) => {
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    textItems.push(...textContent.items.map(item => item.str));
+                    textItems.push(...textContent.items.map(item => item.str.trim()));
                 }
                 
-                let fullText = textItems.join(''); // Join with NO spaces to handle fragmentation.
-                fullText = fullText.replace(/\s+/g, ''); // Remove any lingering whitespace.
+                // Filter out any empty strings that might have resulted from trimming whitespace.
+                textItems = textItems.filter(item => item.length > 0);
 
                 const potentialSubjects = ["DA Lab", "DSA Lab", "IoT Lab", "DA", "OS", "IoT", "Stats", "DSA", "Discrete m"];
                 const uniqueSubjectsFound = new Set();
@@ -302,12 +300,14 @@ const parseTimetable = (file) => {
 
                 const dayMarkers = [
                     { key: 'Mo', name: 'Monday' }, { key: 'Tu', name: 'Tuesday' }, { key: 'We', name: 'Wednesday' },
-                    { key: 'Th', name: 'Thursday' }, { key: 'Fr', name: 'Friday' }, { key: 'Timetablegenerated', name: 'End' } // Spaceless key
+                    { key: 'Th', name: 'Thursday' }, { key: 'Fr', name: 'Friday' }, 
+                    // Use "Timetable" as the final marker, as in "Timetable generated"
+                    { key: 'Timetable', name: 'End' } 
                 ];
 
                 const anchors = [];
                 for (const marker of dayMarkers) {
-                    const index = fullText.indexOf(marker.key);
+                    const index = textItems.indexOf(marker.key);
                     if (index !== -1) {
                         anchors.push({ name: marker.name, index: index });
                     }
@@ -322,16 +322,20 @@ const parseTimetable = (file) => {
                 for (let i = 0; i < anchors.length - 1; i++) {
                     const currentAnchor = anchors[i];
                     const nextAnchor = anchors[i+1];
-                    const dayTextContent = fullText.substring(currentAnchor.index, nextAnchor.index);
+                    const daySlice = textItems.slice(currentAnchor.index, nextAnchor.index);
+                    
+                    // Create a searchable, space-agnostic string from the day's text fragments
+                    const dayTextContent = daySlice.join('').replace(/\s/g, '');
                     const daySchedule = new Set();
                     
                     potentialSubjects.forEach(subject => {
-                        const cleanSubject = subject.replace(/\s/g, '');
-                        if (dayTextContent.includes(cleanSubject)) {
-                            let finalName = subject.replace(/ m$/, '');
+                        // Create a space-agnostic version of the subject to search for
+                        const searchSubject = subject.replace(/\s/g, '');
+                        if (dayTextContent.includes(searchSubject)) {
+                            let finalName = subject.replace(/ m$/, ''); // "Discrete m" -> "Discrete"
                             let category = 'Theory';
                             if (subject.endsWith('Lab')) {
-                                finalName = subject.replace(/ Lab$/, '');
+                                finalName = subject.replace(/ Lab$/, ''); // "DA Lab" -> "DA"
                                 category = 'Lab';
                             }
                             daySchedule.add(`${finalName} ${category}`);
