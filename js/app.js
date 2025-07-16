@@ -29,11 +29,18 @@ const showLoading = (message = 'Loading...') => {
 const hideLoading = () => {
     loadingOverlay.style.display = 'none';
 };
-const toYYYYMMDD = (date) => {
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+
+/**
+ * FINAL, ROBUST, TIMEZONE-SAFE date string formatter.
+ * This version does NOT perform any timezone math. It gets the local date parts directly.
+ * @param {Date | string} dateInput - The date to format.
+ * @returns {string} - The date formatted as "YYYY-MM-DD".
+ */
+const toYYYYMMDD = (dateInput) => {
+    const date = new Date(dateInput);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
 
@@ -100,20 +107,29 @@ const renderOnboardingUI = () => {
 };
 
 /**
- * Automatically creates lecture records for past days.
+ * UPDATED: Automatically creates lecture records using the timezone-safe formatter.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    let lastLog = userProfile.last_log_date 
-        ? new Date(userProfile.last_log_date + 'T00:00:00Z') // Assume UTC from DB for consistency
-        : new Date(new Date(userProfile.start_date).setDate(new Date(userProfile.start_date).getDate() - 1));
-    let currentDate = new Date(lastLog);
+    today.setHours(12, 0, 0, 0); // Use midday to avoid timezone edge cases
+
+    const startDateInput = userProfile.start_date; // e.g., "2025-07-16"
+    
+    let lastLogDate;
+    if (userProfile.last_log_date) {
+        lastLogDate = new Date(userProfile.last_log_date + 'T12:00:00');
+    } else {
+        lastLogDate = new Date(startDateInput + 'T12:00:00');
+        lastLogDate.setDate(lastLogDate.getDate() - 1);
+    }
+    
+    let currentDate = new Date(lastLogDate);
     currentDate.setDate(currentDate.getDate() + 1);
+
     const newLogEntries = [];
     while (currentDate <= today) {
         const dayIndex = currentDate.getDay();
-        if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+        if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             for (const subjectString of lecturesToday) {
@@ -125,7 +141,10 @@ const populateAttendanceLog = async () => {
         }
         currentDate.setDate(currentDate.getDate() + 1);
     }
-    if (newLogEntries.length > 0) { await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' }); }
+
+    if (newLogEntries.length > 0) {
+        await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
+    }
     await supabase.from('profiles').update({ last_log_date: toYYYYMMDD(today) }).eq('id', currentUser.id);
 };
 
@@ -161,12 +180,12 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
             });
         }
     }
-    const isDoubleWeight = (subjectName === 'DA' || subjectName === 'DSA' || userProfile.unique_subjects.some(s => s === subjectName && (userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]] || []).some(lec => lec === `${s} Lab`)));
+    const isDoubleWeight = (subjectName === 'DA' || subjectName === 'DSA' || (userProfile.unique_subjects.some(s => s === subjectName && (userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]] || []).some(lec => lec === `${s} Lab`))));
     const weight = isDoubleWeight ? 2 : 1;
     const futureHeld = totalHeld + (remainingThisWeek * weight);
     const attendedToMaintain = Math.ceil(futureHeld * threshold);
     const neededToAttendFromNow = attendedToMaintain - totalAttended;
-    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
+    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek - 1) * weight : 0)) {
         return { status: 'warning', message: `Risky. Bunk now & you must attend the next ${Math.ceil(neededToAttendFromNow/weight)}.` };
     } else {
         return { status: 'danger', message: `Cannot bunk. Must attend all.` };
@@ -186,7 +205,7 @@ const renderSummaryTable = () => {
         }
     }
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
     else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
@@ -326,7 +345,7 @@ async function handleSaveChanges() {
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date + 'T00:00:00Z'));
+            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
             return;
         }
     }
@@ -337,12 +356,14 @@ function handleDateChange(e) {
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 setupForm.addEventListener('submit', handleSetup);
+
 onboardingView.addEventListener('click', (e) => {
     if (e.target.id === 'add-subject-btn') { handleAddSubject(); }
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
 });
+
 settingsSection.addEventListener('click', async (e) => {
     if (e.target.id === 'clear-attendance-btn') {
         if (!confirm("Are you sure? This will reset all attendance records but will keep your timetable.")) return;
@@ -357,8 +378,10 @@ settingsSection.addEventListener('click', async (e) => {
         window.location.reload();
     }
 });
+
 actionsSection.addEventListener('click', (e) => {
     if (e.target.id === 'save-attendance-btn') { handleSaveChanges(); }
     else if (e.target.closest('.log-actions')) { handleMarkAttendance(e); }
 });
+
 historicalDatePicker.addEventListener('change', handleDateChange);
