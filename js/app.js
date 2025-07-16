@@ -36,6 +36,19 @@ const hideLoading = () => {
 };
 
 /**
+ * NEW: Timezone-safe date string formatter.
+ * @param {Date} date - The date object to format.
+ * @returns {string} - The date formatted as "YYYY-MM-DD".
+ */
+const toYYYYMMDD = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+
+/**
  * Main initialization function.
  */
 const init = async () => {
@@ -94,8 +107,9 @@ const renderOnboardingUI = () => {
     `).join('');
 };
 
+
 /**
- * Automatically creates lecture records for past days.
+ * UPDATED: Automatically creates lecture records using the timezone-safe formatter.
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
@@ -115,13 +129,13 @@ const populateAttendanceLog = async () => {
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
-                newLogEntries.push({ user_id: currentUser.id, date: new Date(currentDate).toISOString().slice(0, 10), subject_name, category, status: 'Missed' });
+                newLogEntries.push({ user_id: currentUser.id, date: toYYYYMMDD(currentDate), subject_name, category, status: 'Missed' });
             }
         }
         currentDate.setDate(currentDate.getDate() + 1);
     }
     if (newLogEntries.length > 0) { await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' }); }
-    await supabase.from('profiles').update({ last_log_date: today.toISOString().slice(0, 10) }).eq('id', currentUser.id);
+    await supabase.from('profiles').update({ last_log_date: toYYYYMMDD(today) }).eq('id', currentUser.id);
 };
 
 const loadFullAttendanceLog = async () => {
@@ -132,7 +146,7 @@ const loadFullAttendanceLog = async () => {
 
 const renderDashboard = () => {
     renderSummaryTable();
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = toYYYYMMDD(new Date()); // Use timezone-safe formatter
     historicalDatePicker.value = todayStr;
     renderScheduleForDate(todayStr);
     dashboardView.style.display = 'block';
@@ -185,8 +199,8 @@ const renderSummaryTable = () => {
             const stats = subjectStats[subjectName];
             const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
             const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-            const hasTheory = stats.Theory.Held > 0 || (setupSubjects.some(s=>s.name === subjectName && s.category === 'Theory'));
-            const hasLab = stats.Lab.Held > 0 || (setupSubjects.some(s=>s.name === subjectName && s.category === 'Lab'));
+            const hasTheory = stats.Theory.Held > 0 || (userProfile.unique_subjects.includes(subjectName) && !userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s => s === `${subjectName} Lab`));
+            const hasLab = stats.Lab.Held > 0 || userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]].some(s => s === `${subjectName} Lab`);
             const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
@@ -205,7 +219,7 @@ const renderSummaryTable = () => {
 const renderScheduleForDate = (dateStr) => {
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
-    const lecturesOnDate = attendanceLog.filter(log => log.date.slice(0, 10) === dateStr);
+    const lecturesOnDate = attendanceLog.filter(log => log.date === dateStr);
     if (lecturesOnDate.length === 0) { dailyLogContainer.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`; return; }
     let logHTML = `<div class="space-y-4">`;
     lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
@@ -285,51 +299,34 @@ function handleMarkAttendance(e) {
     }
 }
 
-/**
- * CORRECTED: Saves all pending changes to the database using parallel updates.
- */
 async function handleSaveChanges() {
     if (pendingChanges.size === 0) return;
     showLoading('Saving...');
-
-    // Create an array of update promises.
     const updatePromises = Array.from(pendingChanges).map(([id, status]) =>
-        supabase
-            .from('attendance_log')
-            .update({ status: status }) // The data to update
-            .eq('id', id)              // The row to match
+        supabase.from('attendance_log').update({ status }).eq('id', id)
     );
-
-    // Execute all update promises in parallel.
     const results = await Promise.all(updatePromises);
-
     const anyError = results.some(result => result.error);
-
     if (anyError) {
         const firstError = results.find(result => result.error).error;
         alert("An error occurred while saving: " + firstError.message);
         hideLoading();
         return;
     }
-
-    // If successful, update the local cache from the pending changes map
     for (const [id, status] of pendingChanges) {
         const logIndex = attendanceLog.findIndex(log => log.id == id);
-        if (logIndex !== -1) {
-            attendanceLog[logIndex].status = status;
-        }
+        if (logIndex !== -1) { attendanceLog[logIndex].status = status; }
     }
-    
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
-    renderSummaryTable(); // Re-render the summary table with new stats
+    renderSummaryTable();
     hideLoading();
 }
 
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date.slice(0, 10);
+            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
             return;
         }
     }
