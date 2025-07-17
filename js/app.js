@@ -546,9 +546,12 @@ const handleSetup = async (e) => {
         return;
     }
     
+    // **FIXED**: Directly update the local state and run the update process
+    // This avoids the race condition of calling init() too quickly.
+    userProfile = profileData;
     isEditingMode = false;
     saveButton.disabled = false;
-    await init();
+    await runFullAttendanceUpdate();
 };
 
 const handleEditTimetable = () => {
