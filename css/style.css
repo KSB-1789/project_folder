@@ -23,3 +23,36 @@ body {
 .day-column {
     min-height: 150px;
 }
+
+/* Consistent styling for dashboard summary table */
+#attendance-summary table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+#attendance-summary th, #attendance-summary td {
+    border: 1px solid #e5e7eb; /* Tailwind's gray-200 */
+    vertical-align: middle;
+    text-align: center;
+    padding: 12px 16px;
+}
+#attendance-summary th {
+    background: #f9fafb; /* Tailwind's gray-50 */
+    font-weight: 600;
+}
+#attendance-summary tr:last-child td {
+    border-bottom: 1px solid #e5e7eb;
+}
+#attendance-summary tr {
+    background: #fff;
+}
+#attendance-summary tr.bg-gray-100 {
+    background: #f3f4f6 !important; /* Tailwind's gray-100 */
+}
+#attendance-summary tr.bg-red-50 {
+    background: #fef2f2 !important; /* Tailwind's red-50 */
+}
+#attendance-summary td[colspan] {
+    text-align: right;
+}
