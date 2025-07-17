@@ -228,11 +228,20 @@ const populateAttendanceLog = async () => {
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
 
-    if (newLogEntries.length > 0) {
-        const { error } = await supabase.from('attendance_log').upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
+    // **DEFINITIVE FIX**: Create a Map to ensure every entry is unique before sending to the database.
+    // This prevents the '409 Conflict' error if the user's timetable has duplicate classes on the same day.
+    const uniqueEntriesMap = new Map();
+    newLogEntries.forEach(entry => {
+        const key = `${entry.date}-${entry.subject_name}-${entry.category}`;
+        uniqueEntriesMap.set(key, entry);
+    });
+    const finalLogEntries = Array.from(uniqueEntriesMap.values());
+
+    if (finalLogEntries.length > 0) {
+        const { error } = await supabase.from('attendance_log').upsert(finalLogEntries, { onConflict: 'user_id,date,subject_name,category' });
         
         if (error) {
-            console.error("CRITICAL: Failed to populate attendance log. Check RLS policies on 'attendance_log' table.", error);
+            console.error("CRITICAL: Failed to populate attendance log. Check RLS policies and unique constraints on 'attendance_log' table.", error);
             return; 
         }
     }
@@ -557,9 +566,6 @@ const handleSetup = async (e) => {
         return;
     }
     
-    // **DEFINITIVE FIX**: After successfully saving, reload the page.
-    // This forces init() to run with guaranteed fresh data from the database,
-    // completely avoiding any race conditions.
     window.location.reload();
 };
 
