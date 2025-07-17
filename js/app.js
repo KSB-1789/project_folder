@@ -76,6 +76,9 @@ const renderOnboardingUI = () => {
     timetableBuilderGrid.innerHTML = days.map(day => `<div class="day-column bg-gray-50 p-3 rounded-lg"><h4 class="font-bold mb-2 text-center">${day}</h4><div class="flex items-center gap-1 mb-2"><select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md"><option value="">-- select --</option>${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}</select><button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button></div><ul data-day="${day}" class="day-schedule-list space-y-1 min-h-[50px]"></ul></div>`).join('');
 };
 
+/**
+ * UPDATED: Creates lecture records for today with "Not Held Yet" status.
+ */
 const populateAttendanceLog = async () => {
     const today = new Date();
     today.setHours(12, 0, 0, 0);
@@ -95,11 +98,16 @@ const populateAttendanceLog = async () => {
         if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
+            
+            // Determine the status based on whether it's the current day
+            const isCurrentDay = toYYYYMMDD(currentDate) === toYYYYMMDD(today);
+            const status = isCurrentDay ? 'Not Held Yet' : 'Missed';
+            
             for (const subjectString of lecturesToday) {
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
-                newLogEntries.push({ user_id: currentUser.id, date: toYYYYMMDD(currentDate), subject_name, category, status: 'Missed' });
+                newLogEntries.push({ user_id: currentUser.id, date: toYYYYMMDD(currentDate), subject_name, category, status });
             }
         }
         currentDate.setDate(currentDate.getDate() + 1);
@@ -123,6 +131,9 @@ const renderDashboard = () => {
     onboardingView.style.display = 'none';
 };
 
+/**
+ * CORRECTED: Fixes the multi-account bug by ensuring robust checks.
+ */
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
     const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
@@ -140,8 +151,18 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
             });
         }
     }
-    const isDoubleWeight = (subjectName === 'DA' || subjectName === 'DSA' || (userProfile.unique_subjects.some(s => s === subjectName && (userProfile.timetable_json[Object.keys(userProfile.timetable_json)[0]] || []).some(lec => lec === `${s} Lab`))));
+    
+    // Multi-account bug fix: Check if subject has a lab by checking ALL defined subjects, not just the first day's.
+    let subjectHasLab = false;
+    for (const day in userProfile.timetable_json) {
+        if(userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) {
+            subjectHasLab = true;
+            break;
+        }
+    }
+    const isDoubleWeight = (subjectName === 'DA' || subjectName === 'DSA' || subjectHasLab);
     const weight = isDoubleWeight ? 2 : 1;
+
     const futureHeld = totalHeld + (remainingThisWeek * weight);
     const attendedToMaintain = Math.ceil(futureHeld * threshold);
     const neededToAttendFromNow = attendedToMaintain - totalAttended;
@@ -153,15 +174,13 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
 };
 
 /**
- * FINAL CORRECTED VERSION: Renders summary table ignoring today's lectures.
+ * UPDATED: Ignores "Not Held Yet" lectures in calculations.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
-    const todayStr = toYYYYMMDD(new Date());
-
     for (const log of attendanceLog) {
-        // --- THIS IS THE FIX: Skip today's logs for this calculation ---
-        if (log.date === todayStr) {
+        // --- THIS IS THE FIX: Skip "Not Held Yet" logs for all calculations ---
+        if (log.status === 'Not Held Yet') {
             continue;
         }
 
@@ -175,8 +194,7 @@ const renderSummaryTable = () => {
         }
     }
 
-    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-
+    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
     if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
     else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
@@ -189,10 +207,8 @@ const renderSummaryTable = () => {
                 if (userProfile.timetable_json[day].includes(`${subjectName} Lab`)) hasLab = true;
             }
             if (!hasTheory && !hasLab) return;
-
             const showCombinedTotal = hasTheory && hasLab;
             const rowSpan = showCombinedTotal ? `rowspan="2"` : ``;
-
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
                 const bunkingCell = showCombinedTotal ? `` : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
@@ -204,7 +220,6 @@ const renderSummaryTable = () => {
                 const bunkingCell = showCombinedTotal ? `` : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
                 tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${subjectCell}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
             }
-
             if (showCombinedTotal) {
                 const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
                 const totalHeld = stats.Theory.Held + stats.Lab.Held;
@@ -217,14 +232,27 @@ const renderSummaryTable = () => {
     attendanceSummary.innerHTML = tableHTML;
 };
 
+/**
+ * UPDATED: Shows/hides the "Not Held Yet" option based on the selected date.
+ */
 const renderScheduleForDate = (dateStr) => {
     pendingChanges.clear();
     saveAttendanceContainer.innerHTML = '';
     const lecturesOnDate = attendanceLog.filter(log => log.date === dateStr);
     if (lecturesOnDate.length === 0) { dailyLogContainer.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`; return; }
+    
+    const isToday = dateStr === toYYYYMMDD(new Date());
+
     let logHTML = `<div class="space-y-4">`;
     lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
-        logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg"><strong class="text-gray-800">${log.subject_name} (${log.category})</strong><div class="log-actions flex space-x-2" data-log-id="${log.id}"><button data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button><button data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button><button data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button></div></div>`;
+        const notHeldYetButton = isToday ? `<button data-status="Not Held Yet" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Not Held Yet' ? 'bg-gray-400 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-400'}">Not Held Yet</button>` : '';
+
+        logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg"><strong class="text-gray-800">${log.subject_name} (${log.category})</strong><div class="log-actions flex flex-wrap gap-2 justify-end" data-log-id="${log.id}">
+                        ${notHeldYetButton}
+                        <button data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button>
+                        <button data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button>
+                        <button data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button>
+                    </div></div>`;
     });
     logHTML += `</div>`;
     dailyLogContainer.innerHTML = logHTML;
@@ -296,8 +324,8 @@ function handleMarkAttendance(e) {
     const logId = buttonGroup.dataset.logId;
     pendingChanges.set(logId, newStatus);
     const allButtons = buttonGroup.querySelectorAll('.log-btn');
-    allButtons.forEach(btn => btn.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500', 'text-white'));
-    button.classList.add(...(newStatus === 'Attended' ? ['bg-green-500', 'text-white'] : newStatus === 'Missed' ? ['bg-red-500', 'text-white'] : ['bg-yellow-500', 'text-white']));
+    allButtons.forEach(btn => btn.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500', 'bg-gray-400', 'text-white'));
+    button.classList.add(...(newStatus === 'Attended' ? ['bg-green-500', 'text-white'] : newStatus === 'Missed' ? ['bg-red-500', 'text-white'] : newStatus === 'Cancelled' ? ['bg-yellow-500', 'text-white'] : ['bg-gray-400', 'text-white']));
     if (!saveAttendanceContainer.querySelector('button')) {
         saveAttendanceContainer.innerHTML = `<button id="save-attendance-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg">Save Changes</button>`;
     }
@@ -341,14 +369,12 @@ function handleDateChange(e) {
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 setupForm.addEventListener('submit', handleSetup);
-
 onboardingView.addEventListener('click', (e) => {
     if (e.target.id === 'add-subject-btn') { handleAddSubject(); }
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
 });
-
 settingsSection.addEventListener('click', async (e) => {
     if (e.target.id === 'clear-attendance-btn') {
         if (!confirm("Are you sure? This will reset all attendance records but will keep your timetable.")) return;
@@ -363,10 +389,8 @@ settingsSection.addEventListener('click', async (e) => {
         window.location.reload();
     }
 });
-
 actionsSection.addEventListener('click', (e) => {
     if (e.target.id === 'save-attendance-btn') { handleSaveChanges(); }
     else if (e.target.closest('.log-actions')) { handleMarkAttendance(e); }
 });
-
 historicalDatePicker.addEventListener('change', handleDateChange);
