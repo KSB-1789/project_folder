@@ -147,7 +147,7 @@ const renderDashboard = () => {
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
 
-    // Calculate the absolute minimum classes one must attend
+    // Calculate the absolute minimum classes one must attend based on held lectures
     const minAttended = Math.ceil(totalHeld * threshold);
 
     if (totalAttended < minAttended) {
@@ -158,27 +158,16 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const bunksAvailable = totalAttended - minAttended;
 
     if (bunksAvailable >= 1) {
-        return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more class(es).` };
+        return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more.` };
     }
 
     // If bunksAvailable is 0, you are at the threshold. Any bunk is risky.
-    let remainingThisWeek = 0;
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // Sunday=0, Monday=1...
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        const days = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-        for (let i = dayOfWeek; i <= 5; i++) {
-            (userProfile.timetable_json[days[i]] || []).forEach(lecture => {
-                if (lecture.startsWith(subjectName)) {
-                    remainingThisWeek++;
-                }
-            });
-        }
-    }
-
-    return { status: 'warning', message: `Risky. At ${userProfile.attendance_threshold}%. Attend next ${remainingThisWeek} class(es).` };
+    return { status: 'warning', message: `Risky. At ${userProfile.attendance_threshold}%. Cannot miss more.` };
 };
 
+/**
+ * FINAL CORRECTED VERSION: Renders the summary table with correct styling.
+ */
 const renderSummaryTable = () => {
     const subjectStats = {};
     for (const log of attendanceLog) {
@@ -206,29 +195,34 @@ const renderSummaryTable = () => {
             if (!hasTheory && !hasLab) return;
 
             const showCombinedRow = hasTheory && hasLab;
+            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
             
+            const rowSpan = showCombinedRow ? 'rowspan="2"' : '';
+            const bunkingCell = `<td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? '' : 'rowspan="1"'}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm" rowspan="1"><div class="p-2 rounded-md bg-green-100 text-green-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? bunkingCell : ''}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? bunkingCell : ''}</tr>`;
             }
-
             if (showCombinedRow) {
                 const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
                 const totalHeld = stats.Theory.Held + stats.Lab.Held;
                 const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
-                const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
-                const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td><td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
+                const totalRowBunkingCell = `<td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+                tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="3">${subjectName}</td>`);
+                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>${totalRowBunkingCell}</tr>`;
             }
         });
     }
     tableHTML += '</tbody></table></div>';
     attendanceSummary.innerHTML = tableHTML;
 };
+
 
 const renderScheduleForDate = (dateStr) => {
     pendingChanges.clear();
