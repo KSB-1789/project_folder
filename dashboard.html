@@ -73,7 +73,7 @@
                 <div class="space-y-4">
                     <div>
                         <p class="text-sm font-medium text-gray-700">Edit Timetable</p>
-                        <p class="text-xs text-gray-500 mb-2">Safely add/remove classes. Your existing attendance will be preserved where possible.</p>
+                        <p class="text-xs text-gray-500 mb-2">Safely add/remove classes. Your existing attendance marks will be preserved where possible.</p>
                         <button id="edit-timetable-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Edit Timetable</button>
                     </div>
                     <div>
@@ -86,24 +86,19 @@
         </div>
     </div>
     
-    <!-- Add Extra Day Modal -->
     <div id="extra-day-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center" style="display: none;">
         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
             <h2 class="text-xl font-bold mb-4">Add Extra Working Day</h2>
             <form id="extra-day-form" class="space-y-4">
                 <div>
-                    <label for="extra-day-date" class="block text-sm font-medium text-gray-700">Select the extra working day (e.g., a Saturday):</label>
+                    <label for="extra-day-date" class="block text-sm font-medium text-gray-700">Select the extra working day:</label>
                     <input type="date" id="extra-day-date" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
                 </div>
                 <div>
                     <label for="weekday-to-follow" class="block text-sm font-medium text-gray-700">Which weekday's schedule was followed?</label>
                     <select id="weekday-to-follow" required class="mt-1 block w-full pl-3 pr-8 py-2 border border-gray-300 rounded-md shadow-sm">
                         <option value="">-- Please select --</option>
-                        <option value="Monday">Monday</option>
-                        <option value="Tuesday">Tuesday</option>
-                        <option value="Wednesday">Wednesday</option>
-                        <option value="Thursday">Thursday</option>
-                        <option value="Friday">Friday</option>
+                        <option value="Monday">Monday</option><option value="Tuesday">Tuesday</option><option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option><option value="Friday">Friday</option>
                     </select>
                 </div>
                 <div class="flex justify-end gap-4 pt-4">

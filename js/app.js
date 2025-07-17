@@ -42,9 +42,6 @@ const toYYYYMMDD = (dateInput) => {
     return `${year}-${month}-${day}`;
 };
 
-/**
- * Main initialization function.
- */
 const init = async () => {
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error || !session) { window.location.href = '/index.html'; return; }
@@ -373,12 +370,7 @@ const handleAddExtraDay = async (e) => {
     const form = e.target;
     const extraDate = form.elements['extra-day-date'].value;
     const weekday = form.elements['weekday-to-follow'].value;
-
-    if (!extraDate || !weekday) {
-        alert("Please select both a date and a weekday schedule to follow.");
-        return;
-    }
-
+    if (!extraDate || !weekday) { alert("Please select both a date and a weekday schedule to follow."); return; }
     showLoading('Adding extra day...');
     const lecturesToAdd = userProfile.timetable_json[weekday] || [];
     if (lecturesToAdd.length === 0) {
@@ -386,27 +378,23 @@ const handleAddExtraDay = async (e) => {
         alert(`There are no classes scheduled on a ${weekday} to add.`);
         return;
     }
-
     const newLogEntries = lecturesToAdd.map(subjectString => {
         const parts = subjectString.split(' ');
         const category = parts.pop();
         const subject_name = parts.join(' ');
         return { user_id: currentUser.id, date: extraDate, subject_name, category, status: 'Not Held Yet' };
     });
-
     const { error } = await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
     if (error) {
         alert("Error adding extra day. It's possible classes already exist on this date. " + error.message);
         hideLoading();
         return;
     }
-
-    // Refresh data and UI
     await loadFullAttendanceLog();
     historicalDatePicker.value = extraDate;
     renderScheduleForDate(extraDate);
     hideLoading();
-    extraDayModal.style.display = 'none';
+    document.getElementById('extra-day-modal').style.display = 'none';
     form.reset();
 };
 
@@ -414,14 +402,12 @@ const handleAddExtraDay = async (e) => {
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 setupForm.addEventListener('submit', handleSetup);
-
 onboardingView.addEventListener('click', (e) => {
     if (e.target.id === 'add-subject-btn') handleAddSubject();
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
 });
-
 settingsSection.addEventListener('click', async (e) => {
     if (e.target.id === 'edit-timetable-btn') {
         handleEditTimetable();
@@ -433,19 +419,16 @@ settingsSection.addEventListener('click', async (e) => {
         window.location.reload();
     }
 });
-
 actionsSection.addEventListener('click', (e) => {
     if (e.target.id === 'save-attendance-btn') { handleSaveChanges(); }
     else if (e.target.closest('.log-actions')) { handleMarkAttendance(e); }
     else if (e.target.id === 'show-extra-day-modal-btn') { extraDayModal.style.display = 'flex'; }
 });
-
 extraDayModal.addEventListener('click', (e) => {
     if (e.target.id === 'cancel-extra-day-btn' || e.target.id === 'extra-day-modal') {
         extraDayModal.style.display = 'none';
         extraDayForm.reset();
     }
 });
-
 extraDayForm.addEventListener('submit', handleAddExtraDay);
 historicalDatePicker.addEventListener('change', handleDateChange);
