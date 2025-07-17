@@ -302,7 +302,6 @@ const renderSummaryTable = () => {
     const todayStr = toYYYYMMDD(new Date());
 
     for (const log of attendanceLog) {
-        // Exclude today's and future logs from the summary table
         if (log.date >= todayStr || log.status === 'Not Held Yet') continue;
         
         const baseSubject = log.subject_name;
@@ -319,7 +318,20 @@ const renderSummaryTable = () => {
         }
     }
 
-    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
+    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3>
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 border border-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-x divide-gray-200">`;
     
     if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
         tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
@@ -339,15 +351,29 @@ const renderSummaryTable = () => {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
                 const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended, stats.Theory.Held);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>` : ``;
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
+                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>` : ``;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
+                                <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">Theory</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Theory.Attended}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Theory.Held}</td>
+                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>
+                                ${bunkingCell}
+                              </tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
                 const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Lab.Attended, stats.Lab.Held);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>` : ``;
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
+                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>` : ``;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
+                                ${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left">${subjectName}</td>`}
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">Lab</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Lab.Attended}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Lab.Held}</td>
+                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>
+                                ${bunkingCell}
+                              </tr>`;
             }
 
             if (showCombinedRow) {
@@ -356,8 +382,15 @@ const renderSummaryTable = () => {
                 const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
                 const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-                tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 align-top" rowspan="3">${subjectName}</td>`);
-                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td><td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
+                tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left align-top" rowspan="3">${subjectName}</td>`);
+                // **FIXED LINE BELOW**
+                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                                <td class="px-6 py-3 text-left text-gray-800">Total</td>
+                                <td class="px-6 py-3 text-center">${totalAttended}</td>
+                                <td class="px-6 py-3 text-center">${totalHeld}</td>
+                                <td class="px-6 py-3 text-center ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>
+                                <td class="px-6 py-3 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>
+                              </tr>`;
             }
         });
     }
