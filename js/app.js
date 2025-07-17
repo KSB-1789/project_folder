@@ -29,19 +29,10 @@ const showLoading = (message = 'Loading...') => {
 const hideLoading = () => {
     loadingOverlay.style.display = 'none';
 };
-
-/**
- * FINAL, ROBUST, TIMEZONE-SAFE date string formatter.
- * This version uses the local date parts and avoids all UTC conversion.
- * @param {Date | string} dateInput - The date to format.
- * @returns {string} - The date formatted as "YYYY-MM-DD".
- */
 const toYYYYMMDD = (dateInput) => {
     const date = new Date(dateInput);
-    // Use local year, month, and day directly. Add timezone offset to counteract constructor behavior if input is a string.
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
     const correctedDate = new Date(date.getTime() + userTimezoneOffset);
-
     const year = correctedDate.getFullYear();
     const month = String(correctedDate.getMonth() + 1).padStart(2, '0');
     const day = String(correctedDate.getDate()).padStart(2, '0');
@@ -67,9 +58,6 @@ const init = async () => {
     }
 };
 
-/**
- * Main update and render pipeline for existing users.
- */
 const runFullAttendanceUpdate = async () => {
     showLoading('Updating attendance records...');
     await populateAttendanceLog();
@@ -79,46 +67,19 @@ const runFullAttendanceUpdate = async () => {
     hideLoading();
 };
 
-/**
- * Renders the initial state of the manual timetable builder.
- */
 const renderOnboardingUI = () => {
     const subjectMasterListUI = document.getElementById('subject-master-list');
     const timetableBuilderGrid = document.getElementById('timetable-grid');
     if (!subjectMasterListUI || !timetableBuilderGrid) return; 
-
-    subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `
-        <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
-            <span>${sub.name} (${sub.category})</span>
-            <button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button>
-        </li>
-    `).join('');
-
+    subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `<li class="flex justify-between items-center bg-gray-100 p-2 rounded-md"><span>${sub.name} (${sub.category})</span><button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button></li>`).join('');
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    timetableBuilderGrid.innerHTML = days.map(day => `
-        <div class="day-column bg-gray-50 p-3 rounded-lg">
-            <h4 class="font-bold mb-2 text-center">${day}</h4>
-            <div class="flex items-center gap-1 mb-2">
-                <select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md">
-                    <option value="">-- select --</option>
-                    ${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
-                </select>
-                <button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button>
-            </div>
-            <ul data-day="${day}" class="day-schedule-list space-y-1 min-h-[50px]"></ul>
-        </div>
-    `).join('');
+    timetableBuilderGrid.innerHTML = days.map(day => `<div class="day-column bg-gray-50 p-3 rounded-lg"><h4 class="font-bold mb-2 text-center">${day}</h4><div class="flex items-center gap-1 mb-2"><select data-day="${day}" class="add-class-select flex-grow w-full pl-2 pr-7 py-1 text-sm bg-white border border-gray-300 rounded-md"><option value="">-- select --</option>${setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}</select><button type="button" data-day="${day}" class="add-class-btn bg-blue-500 text-white text-sm rounded-md h-7 w-7 flex-shrink-0">+</button></div><ul data-day="${day}" class="day-schedule-list space-y-1 min-h-[50px]"></ul></div>`).join('');
 };
 
-/**
- * UPDATED: Automatically creates lecture records using the timezone-safe formatter.
- */
 const populateAttendanceLog = async () => {
     const today = new Date();
-    today.setHours(12, 0, 0, 0); // Use midday to avoid timezone edge cases
-
-    const startDateInput = userProfile.start_date; // e.g., "2025-07-16"
-    
+    today.setHours(12, 0, 0, 0);
+    const startDateInput = userProfile.start_date;
     let lastLogDate;
     if (userProfile.last_log_date) {
         lastLogDate = new Date(userProfile.last_log_date + 'T12:00:00');
@@ -126,14 +87,12 @@ const populateAttendanceLog = async () => {
         lastLogDate = new Date(startDateInput + 'T12:00:00');
         lastLogDate.setDate(lastLogDate.getDate() - 1);
     }
-    
     let currentDate = new Date(lastLogDate);
     currentDate.setDate(currentDate.getDate() + 1);
-
     const newLogEntries = [];
     while (currentDate <= today) {
         const dayIndex = currentDate.getDay();
-        if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+        if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             for (const subjectString of lecturesToday) {
@@ -145,10 +104,7 @@ const populateAttendanceLog = async () => {
         }
         currentDate.setDate(currentDate.getDate() + 1);
     }
-
-    if (newLogEntries.length > 0) {
-        await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
-    }
+    if (newLogEntries.length > 0) { await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' }); }
     await supabase.from('profiles').update({ last_log_date: toYYYYMMDD(today) }).eq('id', currentUser.id);
 };
 
@@ -189,13 +145,16 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const futureHeld = totalHeld + (remainingThisWeek * weight);
     const attendedToMaintain = Math.ceil(futureHeld * threshold);
     const neededToAttendFromNow = attendedToMaintain - totalAttended;
-    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
-        return { status: 'warning', message: `Risky. Bunk now & you must attend the next ${Math.ceil(neededToAttendFromNow/weight)}.` };
+    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek - 1) * weight : 0)) {
+        return { status: 'warning', message: `Risky. Bunk now & attend the next ${Math.ceil(neededToAttendFromNow / weight)}.` };
     } else {
         return { status: 'danger', message: `Cannot bunk. Must attend all.` };
     }
 };
 
+/**
+ * FINAL CORRECTED VERSION: Renders the summary table with the correct combined display.
+ */
 const renderSummaryTable = () => {
     const subjectStats = {};
     for (const log of attendanceLog) {
@@ -208,27 +167,45 @@ const renderSummaryTable = () => {
             if (log.status === 'Attended') { subjectStats[baseSubject][log.category].Attended += weight; }
         }
     }
+
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
-    else {
+
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
+        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
+    } else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
-            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
-            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+            
             let hasTheory = false, hasLab = false;
             for(const day in userProfile.timetable_json) {
                 if (userProfile.timetable_json[day].includes(`${subjectName} Theory`)) hasTheory = true;
                 if (userProfile.timetable_json[day].includes(`${subjectName} Lab`)) hasLab = true;
             }
             if (!hasTheory && !hasLab) return;
-            const rowSpan = (hasTheory && hasLab) ? `rowspan="2"` : ``;
+
+            const showCombinedTotal = hasTheory && hasLab;
+            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+
+            const rowSpan = showCombinedTotal ? `rowspan="2"` : ``;
+
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td><td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
+                const bunkingCell = showCombinedTotal ? `` : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${hasTheory ? '' : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`}</tr>`;
+                const subjectCell = hasTheory ? `` : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`;
+                const bunkingCell = showCombinedTotal ? `` : `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${subjectCell}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
+            }
+
+            if (showCombinedTotal) {
+                const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
+                const totalHeld = stats.Theory.Held + stats.Lab.Held;
+                const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
+                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td><td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
             }
         });
     }
@@ -349,7 +326,7 @@ async function handleSaveChanges() {
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
+            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date + 'T12:00:00'));
             return;
         }
     }
