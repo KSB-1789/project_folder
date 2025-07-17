@@ -193,7 +193,7 @@ const populateAttendanceLog = async () => {
     const startDate = new Date(userProfile.start_date + 'T12:00:00Z');
 
     let currentDate;
-    // **FIXED**: For existing users, start from the day after the last log. For new users (last_log_date is null), always start from the semester start date.
+    // For existing users, start from the day after the last log. For new users (last_log_date is null), always start from the semester start date.
     if (userProfile.last_log_date) {
         currentDate = new Date(userProfile.last_log_date + 'T12:00:00Z');
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
