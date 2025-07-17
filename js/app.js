@@ -193,6 +193,7 @@ const populateAttendanceLog = async () => {
     const startDate = new Date(userProfile.start_date + 'T12:00:00Z');
 
     let currentDate;
+    // **FIXED**: For existing users, start from the day after the last log. For new users (last_log_date is null), always start from the semester start date.
     if (userProfile.last_log_date) {
         currentDate = new Date(userProfile.last_log_date + 'T12:00:00Z');
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
@@ -200,6 +201,7 @@ const populateAttendanceLog = async () => {
         currentDate = new Date(startDate);
     }
     
+    // If the calculated start point is in the future, do nothing.
     if (currentDate > today) return;
 
     const newLogEntries = [];
@@ -207,12 +209,13 @@ const populateAttendanceLog = async () => {
 
     while (toYYYYMMDD(currentDate) <= todayStr) {
         const dayIndex = currentDate.getUTCDay();
-        if (dayIndex >= 1 && dayIndex <= 5) {
+        if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             const dateStr = toYYYYMMDD(currentDate);
-            const isCurrentDay = dateStr === todayStr;
-            const defaultStatus = isCurrentDay ? 'Not Held Yet' : 'Missed';
+            
+            // Determine default status: 'Not Held Yet' for today, 'Missed' for past days.
+            const defaultStatus = toYYYYMMDD(currentDate) === todayStr ? 'Not Held Yet' : 'Missed';
 
             for (const subjectString of lecturesToday) {
                 const parts = subjectString.split(' ');
@@ -228,6 +231,7 @@ const populateAttendanceLog = async () => {
         await supabase.from('attendance_log').upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
     }
     
+    // Always update the last_log_date to today to prevent re-populating.
     await supabase.from('profiles').update({ last_log_date: todayStr }).eq('id', currentUser.id);
 };
 
@@ -537,7 +541,6 @@ const handleSetup = async (e) => {
         last_log_date: null
     };
     
-    // **FIXED**: Chain .select().single() to the upsert to get the returned row.
     const { data: newProfile, error } = await supabase.from('profiles').upsert(profileData).select().single();
 
     if (error) {
@@ -547,7 +550,6 @@ const handleSetup = async (e) => {
         return;
     }
     
-    // **FIXED**: Use the data returned from the database to avoid race conditions.
     userProfile = newProfile;
     isEditingMode = false;
     saveButton.disabled = false;
