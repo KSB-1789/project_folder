@@ -23,8 +23,8 @@
         </div>
 
         <div id="onboarding-view" class="view bg-white p-8 rounded-xl shadow-lg" style="display:none;">
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Initial Setup</h2>
-            <p class="text-gray-600 mb-6">Welcome! Please build your timetable below.</p>
+            <h2 id="setup-title" class="text-2xl font-bold text-gray-800 mb-2">Initial Setup</h2>
+            <p id="setup-subtitle" class="text-gray-600 mb-6">Welcome! Please build your timetable below.</p>
             <form id="setup-form" class="space-y-8">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -58,7 +58,7 @@
                     <h3 class="font-semibold text-lg mb-4">Step 2: Build Your Weekly Schedule</h3>
                     <div id="timetable-grid" class="grid grid-cols-1 md:grid-cols-5 gap-4"></div>
                 </div>
-                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg text-lg">Save and Build Dashboard</button>
+                <button type="submit" id="save-timetable-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg text-lg">Save and Build Dashboard</button>
             </form>
             <p id="setup-error" class="error-message text-red-500 mt-4 font-medium"></p>
         </div>
@@ -78,14 +78,14 @@
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
                 <div class="space-y-4">
                     <div>
+                        <p class="text-sm font-medium text-gray-700">Edit Timetable</p>
+                        <p class="text-xs text-gray-500 mb-2">This will allow you to add or remove classes from your schedule. Your existing attendance marks will be preserved where possible.</p>
+                        <button id="edit-timetable-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Edit Timetable</button>
+                    </div>
+                    <div>
                         <p class="text-sm font-medium text-gray-700">Clear Attendance Records</p>
                         <p class="text-xs text-gray-500 mb-2">This will reset all your "Attended" and "Missed" records but will keep your timetable.</p>
                         <button id="clear-attendance-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">Clear Attendance</button>
-                    </div>
-                    <div>
-                        <p class="text-sm font-medium text-gray-700">Reset All Data & Edit Timetable</p>
-                        <p class="text-xs text-gray-500 mb-2">This will permanently delete your timetable and all attendance data.</p>
-                        <button id="reset-all-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg">Reset Everything</button>
                     </div>
                 </div>
             </div>
