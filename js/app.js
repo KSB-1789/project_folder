@@ -91,7 +91,7 @@ const init = async () => {
     }
     currentUser = session.user;
 
-    // **FIXED**: Fetch the profile for the CURRENTLY LOGGED IN user.
+    // Fetch the profile for the CURRENTLY LOGGED IN user.
     const { data, error: profileError } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
 
     if (profileError && profileError.code !== 'PGRST116') { // PGRST116 means no rows found
@@ -299,27 +299,47 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
  * Renders the main attendance summary table with updated logic.
  */
 const renderSummaryTable = () => {
-    const subjectStats = {};
-    const todayStr = toYYYYMMDD(new Date());
+    const today = new Date();
+    const startDate = new Date(userProfile.start_date + 'T12:00:00Z');
 
-    for (const log of attendanceLog) {
-        if (log.date >= todayStr || log.status === 'Not Held Yet') continue;
-        
-        const baseSubject = log.subject_name;
-        if (!subjectStats[baseSubject]) {
-            subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 } };
-        }
-        
-        const weight = isDoubleWeighted(baseSubject) ? 2 : 1;
-        if (log.status !== 'Cancelled') {
-            subjectStats[baseSubject][log.category].Held += weight;
-            if (log.status === 'Attended') {
-                subjectStats[baseSubject][log.category].Attended += weight;
+    // 1. Calculate the true "Held" count for every subject based on the schedule up to today.
+    const heldCounts = {};
+    if (startDate <= today) {
+        let currentDate = new Date(startDate);
+        while (currentDate <= today) {
+            const dayIndex = currentDate.getUTCDay();
+            if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+                const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
+                const lecturesToday = userProfile.timetable_json[dayName] || [];
+                
+                for (const subjectString of lecturesToday) {
+                    const parts = subjectString.split(' ');
+                    const category = parts.pop();
+                    const subject_name = parts.join(' ');
+                    
+                    if (!heldCounts[subject_name]) heldCounts[subject_name] = { Theory: 0, Lab: 0 };
+                    
+                    const weight = isDoubleWeighted(subject_name) ? 2 : 1;
+                    heldCounts[subject_name][category] += weight;
+                }
             }
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
         }
     }
 
-    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3>
+    // 2. Calculate the "Attended" count from the entire log.
+    const attendedCounts = {};
+    for (const log of attendanceLog) {
+        if (log.status === 'Attended') {
+            const subjectName = log.subject_name;
+            if (!attendedCounts[subjectName]) attendedCounts[subjectName] = { Theory: 0, Lab: 0 };
+            const weight = isDoubleWeighted(subjectName) ? 2 : 1;
+            attendedCounts[subjectName][log.category] += weight;
+        }
+    }
+
+    // 3. Build the table using the new stats
+    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3>
     <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 border border-gray-200">
             <thead class="bg-gray-50">
@@ -338,7 +358,6 @@ const renderSummaryTable = () => {
         tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
     } else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
-            const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
             let hasTheory = false, hasLab = false;
             for(const day in userProfile.timetable_json) {
                 if (userProfile.timetable_json[day].includes(`${subjectName} Theory`)) hasTheory = true;
@@ -346,41 +365,46 @@ const renderSummaryTable = () => {
             }
             if (!hasTheory && !hasLab) return;
 
+            const theoryHeld = heldCounts[subjectName]?.Theory || 0;
+            const theoryAttended = attendedCounts[subjectName]?.Theory || 0;
+            const labHeld = heldCounts[subjectName]?.Lab || 0;
+            const labAttended = attendedCounts[subjectName]?.Lab || 0;
+
             const showCombinedRow = hasTheory && hasLab;
             
             if (hasTheory) {
-                const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended, stats.Theory.Held);
+                const percentage = theoryHeld > 0 ? ((theoryAttended / theoryHeld) * 100).toFixed(1) + '%' : '100.0%';
+                const bunkingInfo = calculateBunkingAssistant(subjectName, theoryAttended, theoryHeld);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                 const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>` : ``;
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
+                tableHTML += `<tr class="${theoryHeld > 0 && ((theoryAttended / theoryHeld) * 100) < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
                                 <td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">Theory</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Theory.Attended}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Theory.Held}</td>
-                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${theoryAttended}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${theoryHeld}</td>
+                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${theoryHeld > 0 && ((theoryAttended / theoryHeld) * 100) < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}</td>
                                 ${bunkingCell}
                               </tr>`;
             }
             if (hasLab) {
-                const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Lab.Attended, stats.Lab.Held);
+                const percentage = labHeld > 0 ? ((labAttended / labHeld) * 100).toFixed(1) + '%' : '100.0%';
+                const bunkingInfo = calculateBunkingAssistant(subjectName, labAttended, labHeld);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                 const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>` : ``;
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
+                tableHTML += `<tr class="${labHeld > 0 && ((labAttended / labHeld) * 100) < userProfile.attendance_threshold ? 'bg-red-50' : ''}">
                                 ${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left">${subjectName}</td>`}
                                 <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">Lab</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Lab.Attended}</td>
-                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${stats.Lab.Held}</td>
-                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${labAttended}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${labHeld}</td>
+                                <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${labHeld > 0 && ((labAttended / labHeld) * 100) < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}</td>
                                 ${bunkingCell}
                               </tr>`;
             }
 
             if (showCombinedRow) {
-                const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
-                const totalHeld = stats.Theory.Held + stats.Lab.Held;
-                const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
+                const totalAttended = theoryAttended + labAttended;
+                const totalHeld = theoryHeld + labHeld;
+                const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) + '%' : '100.0%';
                 const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                 tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left align-top" rowspan="3">${subjectName}</td>`);
@@ -388,7 +412,7 @@ const renderSummaryTable = () => {
                                 <td class="px-6 py-3 text-left text-gray-800">Total</td>
                                 <td class="px-6 py-3 text-center">${totalAttended}</td>
                                 <td class="px-6 py-3 text-center">${totalHeld}</td>
-                                <td class="px-6 py-3 text-center ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>
+                                <td class="px-6 py-3 text-center ${totalHeld > 0 && ((totalAttended / totalHeld) * 100) < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}</td>
                                 <td class="px-6 py-3 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>
                               </tr>`;
             }
@@ -505,7 +529,7 @@ const handleSetup = async (e) => {
     }
 
     const profileData = {
-        id: currentUser.id,
+        id: currentUser.id, // This is the primary key
         start_date: startDate,
         timetable_json: newTimetable,
         unique_subjects: newUniqueSubjects,
@@ -513,12 +537,10 @@ const handleSetup = async (e) => {
         last_log_date: null
     };
     
-    // **FIXED**: `upsert` correctly handles creating a profile if it doesn't exist
-    // or updating it if it does, all based on the primary key (`id`).
-    const { error } = await supabase.from('profiles').upsert(profileData).single();
+    const { error } = await supabase.from('profiles').upsert(profileData);
 
     if (error) {
-        setupError.textContent = `Error: ${error.message}`;
+        setupError.textContent = `Error saving profile: ${error.message}`;
         hideLoading();
         saveButton.disabled = false;
         return;
