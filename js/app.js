@@ -537,7 +537,8 @@ const handleSetup = async (e) => {
         last_log_date: null
     };
     
-    const { error } = await supabase.from('profiles').upsert(profileData);
+    // **FIXED**: Chain .select().single() to the upsert to get the returned row.
+    const { data: newProfile, error } = await supabase.from('profiles').upsert(profileData).select().single();
 
     if (error) {
         setupError.textContent = `Error saving profile: ${error.message}`;
@@ -546,9 +547,8 @@ const handleSetup = async (e) => {
         return;
     }
     
-    // **FIXED**: Directly update the local state and run the update process
-    // This avoids the race condition of calling init() too quickly.
-    userProfile = profileData;
+    // **FIXED**: Use the data returned from the database to avoid race conditions.
+    userProfile = newProfile;
     isEditingMode = false;
     saveButton.disabled = false;
     await runFullAttendanceUpdate();
