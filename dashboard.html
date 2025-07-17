@@ -39,17 +39,8 @@
                 <div class="p-4 border rounded-lg">
                     <h3 class="font-semibold text-lg mb-2">Step 1: Define Your Subjects</h3>
                     <div class="flex items-end gap-2 mb-4">
-                        <div class="flex-grow">
-                            <label for="new-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label>
-                            <input type="text" id="new-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
-                        </div>
-                        <div>
-                            <label for="new-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="new-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
-                                <option>Theory</option>
-                                <option>Lab</option>
-                            </select>
-                        </div>
+                        <div class="flex-grow"><label for="new-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label><input type="text" id="new-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm"></div>
+                        <div><label for="new-subject-category" class="block text-sm font-medium text-gray-700">Category</label><select id="new-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm"><option>Theory</option><option>Lab</option></select></div>
                         <button type="button" id="add-subject-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button>
                     </div>
                     <ul id="subject-master-list" class="space-y-2"></ul>
@@ -66,7 +57,10 @@
         <div id="dashboard-view" class="view space-y-8" style="display:none;">
             <div id="attendance-summary" class="bg-white p-6 rounded-xl shadow-lg"></div>
             <div id="actions-section" class="bg-white p-6 rounded-xl shadow-lg">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Mark Attendance</h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Mark Attendance</h2>
+                    <button id="show-extra-day-modal-btn" class="bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg text-sm hover:bg-indigo-200">Add Extra Day</button>
+                </div>
                 <div class="date-selector mb-4">
                     <label for="historical-date" class="block text-sm font-medium text-gray-700">Select Date:</label>
                     <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
@@ -79,12 +73,12 @@
                 <div class="space-y-4">
                     <div>
                         <p class="text-sm font-medium text-gray-700">Edit Timetable</p>
-                        <p class="text-xs text-gray-500 mb-2">Safely add/remove classes. Your existing attendance marks will be preserved where possible.</p>
+                        <p class="text-xs text-gray-500 mb-2">Safely add/remove classes. Your existing attendance will be preserved where possible.</p>
                         <button id="edit-timetable-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Edit Timetable</button>
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-700">Clear Attendance Records</p>
-                        <p class="text-xs text-gray-500 mb-2">This resets all attendance records to default but keeps your timetable.</p>
+                        <p class="text-xs text-gray-500 mb-2">Resets all attendance records to default but keeps your timetable.</p>
                         <button id="clear-attendance-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">Clear Attendance</button>
                     </div>
                 </div>
@@ -92,6 +86,34 @@
         </div>
     </div>
     
+    <!-- Add Extra Day Modal -->
+    <div id="extra-day-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center" style="display: none;">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+            <h2 class="text-xl font-bold mb-4">Add Extra Working Day</h2>
+            <form id="extra-day-form" class="space-y-4">
+                <div>
+                    <label for="extra-day-date" class="block text-sm font-medium text-gray-700">Select the extra working day (e.g., a Saturday):</label>
+                    <input type="date" id="extra-day-date" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                </div>
+                <div>
+                    <label for="weekday-to-follow" class="block text-sm font-medium text-gray-700">Which weekday's schedule was followed?</label>
+                    <select id="weekday-to-follow" required class="mt-1 block w-full pl-3 pr-8 py-2 border border-gray-300 rounded-md shadow-sm">
+                        <option value="">-- Please select --</option>
+                        <option value="Monday">Monday</option>
+                        <option value="Tuesday">Tuesday</option>
+                        <option value="Wednesday">Wednesday</option>
+                        <option value="Thursday">Thursday</option>
+                        <option value="Friday">Friday</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-4 pt-4">
+                    <button type="button" id="cancel-extra-day-btn" class="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Cancel</button>
+                    <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">Add Day</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="js/netlify.js"></script>
     <script type="module" src="js/app.js"></script>
 </body>
