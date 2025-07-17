@@ -167,8 +167,9 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
 
 const renderSummaryTable = () => {
     const subjectStats = {};
+    const todayStr = toYYYYMMDD(new Date());
     for (const log of attendanceLog) {
-        if (log.status === 'Not Held Yet') continue;
+        if (log.date === todayStr || log.status === 'Not Held Yet') continue;
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) { subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }}; }
         const weight = isDoubleWeighted(baseSubject) ? 2 : 1;
@@ -179,9 +180,8 @@ const renderSummaryTable = () => {
     }
 
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
-        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
-    } else {
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
+    else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
             let hasTheory = false, hasLab = false;
@@ -195,12 +195,19 @@ const renderSummaryTable = () => {
             
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
+                const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended, stats.Theory.Held);
+                const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>` : ``;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
+                const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Lab.Attended, stats.Lab.Held);
+                const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                const bunkingCell = !showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>` : ``;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${bunkingCell}</tr>`;
             }
+
             if (showCombinedRow) {
                 const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
                 const totalHeld = stats.Theory.Held + stats.Lab.Held;
@@ -221,10 +228,15 @@ const renderScheduleForDate = (dateStr) => {
     saveAttendanceContainer.innerHTML = '';
     const lecturesOnDate = attendanceLog.filter(log => log.date === dateStr);
     if (lecturesOnDate.length === 0) { dailyLogContainer.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`; return; }
-    const isToday = dateStr === toYYYYMMDD(new Date());
+    
+    const selectedDate = new Date(dateStr + 'T12:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const showNotHeldYet = selectedDate >= today;
+
     let logHTML = `<div class="space-y-4">`;
     lecturesOnDate.sort((a,b) => a.subject_name.localeCompare(b.subject_name)).forEach(log => {
-        const notHeldYetButton = isToday ? `<button data-status="Not Held Yet" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Not Held Yet' ? 'bg-gray-400 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-400'}">Not Held Yet</button>` : '';
+        const notHeldYetButton = showNotHeldYet ? `<button data-status="Not Held Yet" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Not Held Yet' ? 'bg-gray-400 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-400'}">Not Held Yet</button>` : '';
         logHTML += `<div class="log-item flex items-center justify-between p-4 bg-gray-50 rounded-lg"><strong class="text-gray-800">${log.subject_name} (${log.category})</strong><div class="log-actions flex flex-wrap gap-2 justify-end" data-log-id="${log.id}">${notHeldYetButton}<button data-status="Attended" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Attended' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-green-200'}">Attended</button><button data-status="Missed" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Missed' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-red-200'}">Missed</button><button data-status="Cancelled" class="log-btn px-3 py-1 text-sm font-medium rounded-md ${log.status === 'Cancelled' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-yellow-200'}">Cancelled</button></div></div>`;
     });
     logHTML += `</div>`;
@@ -362,7 +374,7 @@ const handleSaveChanges = async () => {
 
 const handleDateChange = (e) => {
     if (pendingChanges.size > 0 && !confirm("You have unsaved changes. Discard them?")) {
-        e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date + 'T12:00:00'));
+        e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
         return;
     }
     renderScheduleForDate(e.target.value);
@@ -371,13 +383,17 @@ const handleDateChange = (e) => {
 const handleAddExtraDay = async (e) => {
     e.preventDefault();
     const form = e.target;
-    const extraDate = form.elements['extra-day-date'].value;
+    const extraDateStr = form.elements['extra-day-date'].value;
     const weekday = form.elements['weekday-to-follow'].value;
 
-    if (!extraDate || !weekday) {
+    if (!extraDateStr || !weekday) {
         alert("Please select both a date and a weekday schedule to follow.");
         return;
     }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const selectedDate = new Date(extraDateStr + 'T12:00:00');
 
     showLoading('Adding extra day...');
     const lecturesToAdd = userProfile.timetable_json[weekday] || [];
@@ -386,12 +402,14 @@ const handleAddExtraDay = async (e) => {
         alert(`There are no classes scheduled on a ${weekday} to add.`);
         return;
     }
+    
+    const status = selectedDate < today ? 'Missed' : 'Not Held Yet';
 
     const newLogEntries = lecturesToAdd.map(subjectString => {
         const parts = subjectString.split(' ');
         const category = parts.pop();
         const subject_name = parts.join(' ');
-        return { user_id: currentUser.id, date: extraDate, subject_name, category, status: 'Not Held Yet' };
+        return { user_id: currentUser.id, date: extraDateStr, subject_name, category, status };
     });
 
     const { error } = await supabase.from('attendance_log').insert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
@@ -401,12 +419,11 @@ const handleAddExtraDay = async (e) => {
         return;
     }
 
-    // Refresh data and UI
     await loadFullAttendanceLog();
-    historicalDatePicker.value = extraDate;
-    renderScheduleForDate(extraDate);
+    historicalDatePicker.value = extraDateStr;
+    renderScheduleForDate(extraDateStr);
     hideLoading();
-    extraDayModal.style.display = 'none';
+    document.getElementById('extra-day-modal').style.display = 'none';
     form.reset();
 };
 
