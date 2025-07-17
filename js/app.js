@@ -190,10 +190,10 @@ const renderOnboardingUI = () => {
  */
 const populateAttendanceLog = async () => {
     const today = new Date();
+    const todayStr = toYYYYMMDD(today);
     const startDate = new Date(userProfile.start_date + 'T12:00:00Z');
 
     let currentDate;
-    // For existing users, start from the day after the last log. For new users (last_log_date is null), always start from the semester start date.
     if (userProfile.last_log_date) {
         currentDate = new Date(userProfile.last_log_date + 'T12:00:00Z');
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
@@ -201,20 +201,21 @@ const populateAttendanceLog = async () => {
         currentDate = new Date(startDate);
     }
     
-    // If the calculated start point is in the future, do nothing.
-    if (currentDate > today) return;
+    if (currentDate > today) {
+        if (userProfile.last_log_date !== todayStr) {
+             await supabase.from('profiles').update({ last_log_date: todayStr }).eq('id', currentUser.id);
+        }
+        return;
+    }
 
     const newLogEntries = [];
-    const todayStr = toYYYYMMDD(today);
 
     while (toYYYYMMDD(currentDate) <= todayStr) {
         const dayIndex = currentDate.getUTCDay();
-        if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+        if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             const dateStr = toYYYYMMDD(currentDate);
-            
-            // Determine default status: 'Not Held Yet' for today, 'Missed' for past days.
             const defaultStatus = toYYYYMMDD(currentDate) === todayStr ? 'Not Held Yet' : 'Missed';
 
             for (const subjectString of lecturesToday) {
@@ -228,11 +229,17 @@ const populateAttendanceLog = async () => {
     }
 
     if (newLogEntries.length > 0) {
-        await supabase.from('attendance_log').upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
+        const { error } = await supabase.from('attendance_log').upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
+        
+        if (error) {
+            console.error("CRITICAL: Failed to populate attendance log. Check RLS policies on 'attendance_log' table.", error);
+            return; 
+        }
     }
     
-    // Always update the last_log_date to today to prevent re-populating.
-    await supabase.from('profiles').update({ last_log_date: todayStr }).eq('id', currentUser.id);
+    if (userProfile.last_log_date !== todayStr) {
+        await supabase.from('profiles').update({ last_log_date: todayStr }).eq('id', currentUser.id);
+    }
 };
 
 
