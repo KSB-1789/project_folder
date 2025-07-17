@@ -83,7 +83,7 @@ const renderOnboardingUI = () => {
         saveTimetableBtn.textContent = "Save Changes and Re-calculate";
         document.getElementById('start-date').value = userProfile.start_date;
         document.getElementById('min-attendance').value = userProfile.attendance_threshold;
-        document.getElementById('start-date').disabled = true; // Prevent changing start date during edit
+        document.getElementById('start-date').disabled = true;
     } else {
         setupTitle.textContent = "Initial Setup";
         setupSubtitle.textContent = "Welcome! Please build your timetable below.";
@@ -143,6 +143,16 @@ const renderDashboard = () => {
     onboardingView.style.display = 'none';
 };
 
+const isDoubleWeighted = (subjectName) => {
+    if (subjectName === 'DA' || subjectName === 'DSA') return true;
+    for (const day in userProfile.timetable_json) {
+        if (userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) {
+            return true;
+        }
+    }
+    return false;
+};
+
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
     const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
@@ -154,12 +164,13 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const dayOfWeek = today.getDay();
     if (dayOfWeek >= 1 && dayOfWeek <= 5) {
         const days = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-        for (let i = dayOfWeek; i <= 5; i++) { (userProfile.timetable_json[days[i]] || []).forEach(lecture => { if (lecture.startsWith(subjectName)) { remainingThisWeek++; } }); }
+        for (let i = dayOfWeek; i <= 5; i++) {
+            (userProfile.timetable_json[days[i]] || []).forEach(lecture => {
+                if (lecture.startsWith(subjectName)) { remainingThisWeek++; }
+            });
+        }
     }
-    let subjectHasLab = false;
-    for (const day in userProfile.timetable_json) { if (userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) { subjectHasLab = true; break; } }
-    const isDoubleWeight = (subjectName === 'DA' || subjectName === 'DSA' || subjectHasLab);
-    const weight = isDoubleWeight ? 2 : 1;
+    const weight = isDoubleWeighted(subjectName) ? 2 : 1;
     const futureHeld = totalHeld + (remainingThisWeek * weight);
     const attendedToMaintain = Math.ceil(futureHeld * threshold);
     const neededToAttendFromNow = attendedToMaintain - totalAttended;
@@ -176,16 +187,17 @@ const renderSummaryTable = () => {
         if (log.status === 'Not Held Yet') continue;
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) { subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }}; }
-        let weight = 1;
-        if (log.category === 'Lab' || baseSubject === 'DA' || baseSubject === 'DSA') { weight = 2; }
+        const weight = isDoubleWeighted(baseSubject) ? 2 : 1;
         if (log.status !== 'Cancelled') {
             subjectStats[baseSubject][log.category].Held += weight;
             if (log.status === 'Attended') { subjectStats[baseSubject][log.category].Attended += weight; }
         }
     }
+
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
-    else {
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
+        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
+    } else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
             let hasTheory = false, hasLab = false;
@@ -195,27 +207,24 @@ const renderSummaryTable = () => {
             }
             if (!hasTheory && !hasLab) return;
 
-            const showCombinedTotal = hasTheory && hasLab;
-            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
-            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-            const rowSpan = showCombinedTotal ? `rowspan="2"` : ``;
-            const bunkingCell = `<td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+            const showCombinedRow = hasTheory && hasLab;
             
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedTotal ? bunkingCell : ''}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? 'rowspan="3"' : ''}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : `<td></td>`}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedTotal ? bunkingCell : ''}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
             }
-            if (showCombinedTotal) {
+
+            if (showCombinedRow) {
                 const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
                 const totalHeld = stats.Theory.Held + stats.Lab.Held;
                 const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
-                const totalRow = `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>${bunkingCell}</tr>`;
-                const theoryRow = tableHTML.substring(tableHTML.lastIndexOf('<tr'));
-                tableHTML = tableHTML.substring(0, tableHTML.lastIndexOf('<tr')) + theoryRow.replace('</tr>', '</tr>' + totalRow);
+                const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
+                const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td><td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
             }
         });
     }
@@ -238,7 +247,72 @@ const renderScheduleForDate = (dateStr) => {
     dailyLogContainer.innerHTML = logHTML;
 };
 
-// --- EVENT HANDLERS ---
+const handleSetup = async (e) => {
+    e.preventDefault();
+    const saveButton = e.target.querySelector('button[type="submit"]');
+    saveButton.disabled = true;
+    showLoading(isEditingMode ? 'Updating Timetable...' : 'Saving Timetable...');
+    const setupError = document.getElementById('setup-error');
+    setupError.textContent = '';
+    const startDate = document.getElementById('start-date').value;
+    const minAttendance = document.getElementById('min-attendance').value;
+    if (!startDate || !minAttendance || setupSubjects.length === 0) {
+        setupError.textContent = 'Please set a start date, percentage, and add at least one subject.';
+        hideLoading(); saveButton.disabled = false; return;
+    }
+    const newTimetable = {};
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    days.forEach(day => {
+        const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
+        newTimetable[day] = Array.from(classList).map(li => li.dataset.value);
+    });
+    const newUniqueSubjects = [...new Set(setupSubjects.map(sub => sub.name))];
+    if (isEditingMode) {
+        const oldTimetable = userProfile.timetable_json;
+        const classesToDelete = [];
+        for (const day in oldTimetable) {
+            oldTimetable[day].forEach(oldClass => {
+                if (!newTimetable[day] || !newTimetable[day].includes(oldClass)) {
+                    const parts = oldClass.split(' ');
+                    const category = parts.pop();
+                    const name = parts.join(' ');
+                    classesToDelete.push({ name, category });
+                }
+            });
+        }
+        if (classesToDelete.length > 0) {
+            const uniqueToDelete = [...new Map(classesToDelete.map(item => [`${item.name}-${item.category}`, item])).values()];
+            await Promise.all(uniqueToDelete.map(cls => supabase.from('attendance_log').delete().eq('user_id', currentUser.id).eq('subject_name', cls.name).eq('category', cls.category)));
+        }
+        const { error } = await supabase.from('profiles').update({ timetable_json: newTimetable, unique_subjects: newUniqueSubjects, attendance_threshold: parseInt(minAttendance), last_log_date: null }).eq('id', currentUser.id);
+        if (error) { setupError.textContent = `Error: ${error.message}`; hideLoading(); saveButton.disabled = false; return; }
+    } else {
+        const { error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json: newTimetable, unique_subjects: newUniqueSubjects }]).single();
+        if (error) { setupError.textContent = `Error: ${error.message}`; hideLoading(); saveButton.disabled = false; return; }
+    }
+    isEditingMode = false;
+    saveButton.disabled = false;
+    await init();
+};
+
+const handleEditTimetable = () => {
+    isEditingMode = true;
+    setupSubjects = [];
+    const subjectSet = new Set();
+    for (const day in userProfile.timetable_json) {
+        userProfile.timetable_json[day].forEach(cls => subjectSet.add(cls));
+    }
+    setupSubjects = Array.from(subjectSet).map(cls => {
+        const parts = cls.split(' ');
+        const category = parts.pop();
+        const name = parts.join(' ');
+        return { name, category };
+    });
+    renderOnboardingUI();
+    dashboardView.style.display = 'none';
+    onboardingView.style.display = 'block';
+};
+
 const handleAddSubject = () => {
     const newSubjectNameInput = document.getElementById('new-subject-name');
     const newSubjectCategorySelect = document.getElementById('new-subject-category');
@@ -289,8 +363,7 @@ const handleSaveChanges = async () => {
     const anyError = results.some(result => result.error);
     if (anyError) {
         alert("An error occurred while saving: " + results.find(r => r.error).error.message);
-        hideLoading();
-        return;
+        hideLoading(); return;
     }
     for (const [id, status] of pendingChanges) {
         const logIndex = attendanceLog.findIndex(log => log.id == id);
@@ -310,91 +383,12 @@ const handleDateChange = (e) => {
     renderScheduleForDate(e.target.value);
 };
 
-const handleSaveTimetable = async (e) => {
-    e.preventDefault();
-    showLoading(isEditingMode ? 'Updating Timetable...' : 'Saving Timetable...');
-    const setupError = document.getElementById('setup-error');
-    setupError.textContent = '';
-    const startDate = document.getElementById('start-date').value;
-    const minAttendance = document.getElementById('min-attendance').value;
-    if (!startDate || !minAttendance || setupSubjects.length === 0) {
-        setupError.textContent = 'Please set a start date, percentage, and add at least one subject.';
-        hideLoading();
-        return;
-    }
-
-    const newTimetable = {};
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    days.forEach(day => {
-        const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
-        newTimetable[day] = Array.from(classList).map(li => li.dataset.value);
-    });
-    
-    const newUniqueSubjects = [...new Set(setupSubjects.map(sub => sub.name))];
-
-    if (isEditingMode) {
-        // --- Smart Deletion Logic ---
-        const oldTimetable = userProfile.timetable_json;
-        const classesToDelete = [];
-        for (const day in oldTimetable) {
-            oldTimetable[day].forEach(oldClass => {
-                if (!newTimetable[day] || !newTimetable[day].includes(oldClass)) {
-                    const parts = oldClass.split(' ');
-                    const category = parts.pop();
-                    const name = parts.join(' ');
-                    classesToDelete.push({ name, category, day: day.substring(0, 3).toLowerCase() });
-                }
-            });
-        }
-        if (classesToDelete.length > 0) {
-            const dayMap = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5 };
-            const deletionPromises = classesToDelete.map(cls => {
-                return supabase.from('attendance_log').delete()
-                    .eq('user_id', currentUser.id)
-                    .eq('subject_name', cls.name)
-                    .eq('category', cls.category)
-                    .filter('date', 'eq', `(EXTRACT(ISODOW FROM date) = ${dayMap[cls.day]})`); // This is a pseudo-filter, actual deletion requires more complex logic or a function. For simplicity here, we'll delete all instances. A better approach is an RPC function.
-            });
-            // Simplified: Delete all instances of a subject if it's removed, as precise day-of-week deletion is complex via client library.
-            const uniqueToDelete = [...new Map(classesToDelete.map(item => [`${item.name}-${item.category}`, item])).values()];
-            await Promise.all(uniqueToDelete.map(cls => supabase.from('attendance_log').delete().eq('user_id', currentUser.id).eq('subject_name', cls.name).eq('category', cls.category)));
-        }
-        // Update profile and reset last_log_date to force repopulation
-        const { error } = await supabase.from('profiles').update({ timetable_json: newTimetable, unique_subjects: newUniqueSubjects, attendance_threshold: parseInt(minAttendance), last_log_date: null }).eq('id', currentUser.id);
-        if (error) { setupError.textContent = `Error: ${error.message}`; hideLoading(); return; }
-    } else {
-        const { error } = await supabase.from('profiles').insert([{ id: currentUser.id, start_date: startDate, attendance_threshold: parseInt(minAttendance), timetable_json: newTimetable, unique_subjects: newUniqueSubjects }]).single();
-        if (error) { setupError.textContent = `Error: ${error.message}`; hideLoading(); return; }
-    }
-    
-    isEditingMode = false;
-    await init(); // Re-initialize the entire application state
-};
-
-const handleEditTimetable = () => {
-    isEditingMode = true;
-    setupSubjects = [];
-    const subjectSet = new Set();
-    for (const day in userProfile.timetable_json) {
-        userProfile.timetable_json[day].forEach(cls => subjectSet.add(cls));
-    }
-    setupSubjects = Array.from(subjectSet).map(cls => {
-        const parts = cls.split(' ');
-        const category = parts.pop();
-        const name = parts.join(' ');
-        return { name, category };
-    });
-    renderOnboardingUI();
-    dashboardView.style.display = 'none';
-    onboardingView.style.display = 'block';
-};
-
 // --- ATTACH EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 setupForm.addEventListener('submit', handleSaveTimetable);
 onboardingView.addEventListener('click', (e) => {
-    if (e.target.id === 'add-subject-btn') { handleAddSubject(); }
+    if (e.target.id === 'add-subject-btn') handleAddSubject();
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
     if (e.target.classList.contains('add-class-btn')) { handleAddClassToDay(e.target.dataset.day); }
     if (e.target.classList.contains('remove-class-btn')) { e.target.parentElement.remove(); }
