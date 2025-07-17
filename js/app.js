@@ -72,11 +72,10 @@ const runFullAttendanceUpdate = async () => {
 const renderOnboardingUI = () => {
     const subjectMasterListUI = document.getElementById('subject-master-list');
     const timetableBuilderGrid = document.getElementById('timetable-grid');
+    if (!subjectMasterListUI || !timetableBuilderGrid) return; 
     const setupTitle = document.getElementById('setup-title');
     const setupSubtitle = document.getElementById('setup-subtitle');
     const saveTimetableBtn = document.getElementById('save-timetable-btn');
-    if (!subjectMasterListUI || !timetableBuilderGrid) return; 
-
     if (isEditingMode) {
         setupTitle.textContent = "Edit Timetable";
         setupSubtitle.textContent = "Add or remove subjects and classes below. Your existing attendance will be preserved.";
@@ -90,9 +89,7 @@ const renderOnboardingUI = () => {
         saveTimetableBtn.textContent = "Save and Build Dashboard";
         document.getElementById('start-date').disabled = false;
     }
-
     subjectMasterListUI.innerHTML = setupSubjects.map((sub, index) => `<li class="flex justify-between items-center bg-gray-100 p-2 rounded-md"><span>${sub.name} (${sub.category})</span><button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button></li>`).join('');
-    
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     timetableBuilderGrid.innerHTML = days.map(day => {
         const scheduledClasses = isEditingMode ? (userProfile.timetable_json[day] || []) : [];
@@ -181,6 +178,9 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     }
 };
 
+/**
+ * FINAL CORRECTED VERSION: Renders the summary table with the correct UI structure.
+ */
 const renderSummaryTable = () => {
     const subjectStats = {};
     for (const log of attendanceLog) {
@@ -211,7 +211,7 @@ const renderSummaryTable = () => {
             
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? 'rowspan="3"' : ''}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : `<td></td>`}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? 'rowspan="2"' : ''}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
@@ -247,6 +247,7 @@ const renderScheduleForDate = (dateStr) => {
     dailyLogContainer.innerHTML = logHTML;
 };
 
+// --- EVENT HANDLERS ---
 const handleSetup = async (e) => {
     e.preventDefault();
     const saveButton = e.target.querySelector('button[type="submit"]');
@@ -386,7 +387,7 @@ const handleDateChange = (e) => {
 // --- ATTACH EVENT LISTENERS ---
 document.addEventListener('DOMContentLoaded', init);
 logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
-setupForm.addEventListener('submit', handleSaveTimetable);
+setupForm.addEventListener('submit', handleSetup);
 onboardingView.addEventListener('click', (e) => {
     if (e.target.id === 'add-subject-btn') handleAddSubject();
     if (e.target.classList.contains('remove-subject-btn')) { setupSubjects.splice(e.target.dataset.index, 1); renderOnboardingUI(); }
