@@ -153,11 +153,18 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
 };
 
 /**
- * FINAL CORRECTED VERSION: Renders the summary table with the correct combined display.
+ * FINAL CORRECTED VERSION: Renders summary table ignoring today's lectures.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
+    const todayStr = toYYYYMMDD(new Date());
+
     for (const log of attendanceLog) {
+        // --- THIS IS THE FIX: Skip today's logs for this calculation ---
+        if (log.date === todayStr) {
+            continue;
+        }
+
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) { subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }}; }
         let weight = 1;
@@ -168,14 +175,14 @@ const renderSummaryTable = () => {
         }
     }
 
-    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
+    let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
 
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
-        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
-    } else {
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
+    else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
-            
+            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
             let hasTheory = false, hasLab = false;
             for(const day in userProfile.timetable_json) {
                 if (userProfile.timetable_json[day].includes(`${subjectName} Theory`)) hasTheory = true;
@@ -184,9 +191,6 @@ const renderSummaryTable = () => {
             if (!hasTheory && !hasLab) return;
 
             const showCombinedTotal = hasTheory && hasLab;
-            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
-            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-
             const rowSpan = showCombinedTotal ? `rowspan="2"` : ``;
 
             if (hasTheory) {
@@ -326,7 +330,7 @@ async function handleSaveChanges() {
 function handleDateChange(e) {
     if (pendingChanges.size > 0) {
         if (!confirm("You have unsaved changes. Are you sure you want to discard them?")) {
-            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date + 'T12:00:00'));
+            e.target.value = toYYYYMMDD(new Date(attendanceLog.find(log => log.id == Array.from(pendingChanges.keys())[0]).date));
             return;
         }
     }
