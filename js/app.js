@@ -208,44 +208,45 @@ const populateAttendanceLog = async () => {
         return;
     }
 
-    const newLogEntries = [];
+    let lastSuccessfulDateStr = userProfile.last_log_date;
 
     while (toYYYYMMDD(currentDate) <= todayStr) {
         const dayIndex = currentDate.getUTCDay();
+        const dailyEntries = [];
+
         if (dayIndex >= 1 && dayIndex <= 5) {
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
-            const lecturesToday = userProfile.timetable_json[dayName] || [];
             const dateStr = toYYYYMMDD(currentDate);
-            const defaultStatus = toYYYYMMDD(currentDate) === todayStr ? 'Not Held Yet' : 'Missed';
+            const defaultStatus = dateStr === todayStr ? 'Not Held Yet' : 'Missed';
+            
+            // Use a Set to automatically handle any duplicate classes in the timetable for a given day.
+            const uniqueLecturesToday = [...new Set(userProfile.timetable_json[dayName] || [])];
 
-            for (const subjectString of lecturesToday) {
+            for (const subjectString of uniqueLecturesToday) {
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
-                newLogEntries.push({ user_id: currentUser.id, date: dateStr, subject_name, category, status: defaultStatus });
+                dailyEntries.push({ user_id: currentUser.id, date: dateStr, subject_name, category, status: defaultStatus });
             }
         }
+
+        if (dailyEntries.length > 0) {
+            const { error } = await supabase.from('attendance_log').upsert(dailyEntries, { onConflict: 'user_id,date,subject_name,category' });
+            if (error) {
+                console.error(`CRITICAL: Failed to populate log for date: ${toYYYYMMDD(currentDate)}. Check RLS policies.`, error);
+                // If a day fails, stop and update the profile to the last known good date.
+                if (lastSuccessfulDateStr) {
+                    await supabase.from('profiles').update({ last_log_date: lastSuccessfulDateStr }).eq('id', currentUser.id);
+                }
+                return; // Exit the function to prevent further errors.
+            }
+        }
+        
+        lastSuccessfulDateStr = toYYYYMMDD(currentDate);
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
-
-    // **DEFINITIVE FIX**: Create a Map to ensure every entry is unique before sending to the database.
-    // This prevents the '409 Conflict' error if the user's timetable has duplicate classes on the same day.
-    const uniqueEntriesMap = new Map();
-    newLogEntries.forEach(entry => {
-        const key = `${entry.date}-${entry.subject_name}-${entry.category}`;
-        uniqueEntriesMap.set(key, entry);
-    });
-    const finalLogEntries = Array.from(uniqueEntriesMap.values());
-
-    if (finalLogEntries.length > 0) {
-        const { error } = await supabase.from('attendance_log').upsert(finalLogEntries, { onConflict: 'user_id,date,subject_name,category' });
-        
-        if (error) {
-            console.error("CRITICAL: Failed to populate attendance log. Check RLS policies and unique constraints on 'attendance_log' table.", error);
-            return; 
-        }
-    }
     
+    // If the loop completes, update the last_log_date to today.
     if (userProfile.last_log_date !== todayStr) {
         await supabase.from('profiles').update({ last_log_date: todayStr }).eq('id', currentUser.id);
     }
