@@ -214,21 +214,21 @@ const populateAttendanceLog = async () => {
         const dayIndex = currentDate.getUTCDay();
         const dailyEntries = [];
 
-        if (dayIndex >= 1 && dayIndex <= 5) {
-            const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
-            const dateStr = toYYYYMMDD(currentDate);
-            const defaultStatus = dateStr === todayStr ? 'Not Held Yet' : 'Missed';
-            
-            // Use a Set to automatically handle any duplicate classes in the timetable for a given day.
-            const uniqueLecturesToday = [...new Set(userProfile.timetable_json[dayName] || [])];
+    if (dayIndex >= 1 && dayIndex <= 5) {
+        const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
+        const dateStr = toYYYYMMDD(currentDate);
+        const defaultStatus = dateStr === todayStr ? 'Not Held Yet' : 'Missed';
+        
+        // Use a Set to automatically handle any duplicate classes in the timetable for a given day.
+        const uniqueLecturesToday = [...new Set(userProfile.timetable_json[dayName] || [])];
 
-            for (const subjectString of uniqueLecturesToday) {
-                const parts = subjectString.split(' ');
-                const category = parts.pop();
-                const subject_name = parts.join(' ');
-                dailyEntries.push({ user_id: currentUser.id, date: dateStr, subject_name, category, status: defaultStatus });
-            }
+        for (const subjectString of uniqueLecturesToday) {
+            const parts = subjectString.split(' ');
+            const category = parts.pop();
+            const subject_name = parts.join(' ');
+            dailyEntries.push({ user_id: currentUser.id, date: dateStr, subject_name, category, status: defaultStatus });
         }
+}
 
         if (dailyEntries.length > 0) {
             const { error } = await supabase.from('attendance_log').upsert(dailyEntries, { onConflict: 'user_id,date,subject_name,category' });
@@ -242,6 +242,8 @@ const populateAttendanceLog = async () => {
             }
         }
         
+
+
         lastSuccessfulDateStr = toYYYYMMDD(currentDate);
         currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
