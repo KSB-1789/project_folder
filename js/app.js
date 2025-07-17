@@ -140,54 +140,53 @@ const renderDashboard = () => {
     onboardingView.style.display = 'none';
 };
 
-const isDoubleWeighted = (subjectName) => {
-    if (subjectName === 'DA' || subjectName === 'DSA') return true;
-    for (const day in userProfile.timetable_json) {
-        if (userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) {
-            return true;
-        }
-    }
-    return false;
-};
-
+/**
+ * FINAL CORRECTED VERSION: This function uses a simpler, robust integer-based
+ * calculation that is not prone to floating-point errors.
+ */
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
-    const currentPercentage = totalHeld > 0 ? (totalAttended / totalHeld) : 1;
-    if (currentPercentage < threshold) { return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all!` }; }
-    const safeBunks = Math.floor((totalAttended - (threshold * totalHeld)) / threshold);
-    if (safeBunks > 0) { return { status: 'safe', message: `Safe. You can miss ${safeBunks} more.` }; }
+
+    // Calculate the absolute minimum classes one must attend
+    const minAttended = Math.ceil(totalHeld * threshold);
+
+    if (totalAttended < minAttended) {
+        return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all!` };
+    }
+
+    // This is the number of classes you are "ahead" by. It's the true number of bunks available.
+    const bunksAvailable = totalAttended - minAttended;
+
+    if (bunksAvailable >= 1) {
+        return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more class(es).` };
+    }
+
+    // If bunksAvailable is 0, you are at the threshold. Any bunk is risky.
     let remainingThisWeek = 0;
     const today = new Date();
-    const dayOfWeek = today.getDay();
+    const dayOfWeek = today.getDay(); // Sunday=0, Monday=1...
     if (dayOfWeek >= 1 && dayOfWeek <= 5) {
         const days = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
         for (let i = dayOfWeek; i <= 5; i++) {
             (userProfile.timetable_json[days[i]] || []).forEach(lecture => {
-                if (lecture.startsWith(subjectName)) { remainingThisWeek++; }
+                if (lecture.startsWith(subjectName)) {
+                    remainingThisWeek++;
+                }
             });
         }
     }
-    const weight = isDoubleWeighted(subjectName) ? 2 : 1;
-    const futureHeld = totalHeld + (remainingThisWeek * weight);
-    const attendedToMaintain = Math.ceil(futureHeld * threshold);
-    const neededToAttendFromNow = attendedToMaintain - totalAttended;
-    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek - 1) * weight : 0)) {
-        return { status: 'warning', message: `Risky. Bunk now & attend the next ${Math.ceil(neededToAttendFromNow / weight)}.` };
-    } else {
-        return { status: 'danger', message: `Cannot bunk. Must attend all.` };
-    }
+
+    return { status: 'warning', message: `Risky. At ${userProfile.attendance_threshold}%. Attend next ${remainingThisWeek} class(es).` };
 };
 
-/**
- * FINAL CORRECTED VERSION: Renders the summary table with the correct UI structure.
- */
 const renderSummaryTable = () => {
     const subjectStats = {};
     for (const log of attendanceLog) {
         if (log.status === 'Not Held Yet') continue;
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) { subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }}; }
-        const weight = isDoubleWeighted(baseSubject) ? 2 : 1;
+        const isDoubleWeighted = (baseSubject === 'DA' || baseSubject === 'DSA' || log.category === 'Lab');
+        const weight = isDoubleWeighted ? 2 : 1;
         if (log.status !== 'Cancelled') {
             subjectStats[baseSubject][log.category].Held += weight;
             if (log.status === 'Attended') { subjectStats[baseSubject][log.category].Attended += weight; }
@@ -195,9 +194,8 @@ const renderSummaryTable = () => {
     }
 
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
-        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
-    } else {
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
+    else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
             let hasTheory = false, hasLab = false;
@@ -211,7 +209,7 @@ const renderSummaryTable = () => {
             
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? 'rowspan="2"' : ''}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${showCombinedRow ? '' : 'rowspan="1"'}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm" rowspan="1"><div class="p-2 rounded-md bg-green-100 text-green-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
