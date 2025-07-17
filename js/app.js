@@ -91,6 +91,7 @@ const init = async () => {
     }
     currentUser = session.user;
 
+    // **FIXED**: Fetch the profile for the CURRENTLY LOGGED IN user.
     const { data, error: profileError } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
 
     if (profileError && profileError.code !== 'PGRST116') { // PGRST116 means no rows found
@@ -383,7 +384,6 @@ const renderSummaryTable = () => {
                 const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
                 const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                 tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left align-top" rowspan="3">${subjectName}</td>`);
-                // **FIXED LINE BELOW**
                 tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300">
                                 <td class="px-6 py-3 text-left text-gray-800">Total</td>
                                 <td class="px-6 py-3 text-center">${totalAttended}</td>
@@ -513,6 +513,8 @@ const handleSetup = async (e) => {
         last_log_date: null
     };
     
+    // **FIXED**: `upsert` correctly handles creating a profile if it doesn't exist
+    // or updating it if it does, all based on the primary key (`id`).
     const { error } = await supabase.from('profiles').upsert(profileData).single();
 
     if (error) {
