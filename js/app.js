@@ -32,15 +32,19 @@ const hideLoading = () => {
 
 /**
  * FINAL, ROBUST, TIMEZONE-SAFE date string formatter.
- * This version does NOT perform any timezone math. It gets the local date parts directly.
+ * This version uses the local date parts and avoids all UTC conversion.
  * @param {Date | string} dateInput - The date to format.
  * @returns {string} - The date formatted as "YYYY-MM-DD".
  */
 const toYYYYMMDD = (dateInput) => {
     const date = new Date(dateInput);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    // Use local year, month, and day directly. Add timezone offset to counteract constructor behavior if input is a string.
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    const correctedDate = new Date(date.getTime() + userTimezoneOffset);
+
+    const year = correctedDate.getFullYear();
+    const month = String(correctedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(correctedDate.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 };
 
@@ -129,7 +133,7 @@ const populateAttendanceLog = async () => {
     const newLogEntries = [];
     while (currentDate <= today) {
         const dayIndex = currentDate.getDay();
-        if (dayIndex >= 1 && dayIndex <= 5) {
+        if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
             const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
             const lecturesToday = userProfile.timetable_json[dayName] || [];
             for (const subjectString of lecturesToday) {
@@ -185,7 +189,7 @@ const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const futureHeld = totalHeld + (remainingThisWeek * weight);
     const attendedToMaintain = Math.ceil(futureHeld * threshold);
     const neededToAttendFromNow = attendedToMaintain - totalAttended;
-    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek - 1) * weight : 0)) {
+    if (neededToAttendFromNow <= (remainingThisWeek > 0 ? (remainingThisWeek-1) * weight : 0)) {
         return { status: 'warning', message: `Risky. Bunk now & you must attend the next ${Math.ceil(neededToAttendFromNow/weight)}.` };
     } else {
         return { status: 'danger', message: `Cannot bunk. Must attend all.` };
