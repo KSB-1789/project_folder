@@ -140,33 +140,31 @@ const renderDashboard = () => {
     onboardingView.style.display = 'none';
 };
 
-/**
- * FINAL CORRECTED VERSION: This function uses a simpler, robust integer-based
- * calculation that is not prone to floating-point errors.
- */
+const isDoubleWeighted = (subjectName) => {
+    if (subjectName === 'DA' || subjectName === 'DSA') return true;
+    for (const day in userProfile.timetable_json) {
+        if (userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) {
+            return true;
+        }
+    }
+    return false;
+};
+
 const calculateBunkingAssistant = (subjectName, totalAttended, totalHeld) => {
     const threshold = userProfile.attendance_threshold / 100;
-
-    // Calculate the absolute minimum classes one must attend based on held lectures
     const minAttended = Math.ceil(totalHeld * threshold);
-
     if (totalAttended < minAttended) {
         return { status: 'danger', message: `Below ${userProfile.attendance_threshold}%. Attend all!` };
     }
-
-    // This is the number of classes you are "ahead" by. It's the true number of bunks available.
     const bunksAvailable = totalAttended - minAttended;
-
     if (bunksAvailable >= 1) {
         return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more.` };
     }
-
-    // If bunksAvailable is 0, you are at the threshold. Any bunk is risky.
-    return { status: 'warning', message: `Risky. At ${userProfile.attendance_threshold}%. Cannot miss more.` };
+    return { status: 'warning', message: `Risky. At ${userProfile.attendance_threshold}%. Cannot miss.` };
 };
 
 /**
- * FINAL CORRECTED VERSION: Renders the summary table with correct styling.
+ * FINAL CORRECTED VERSION: This version has the corrected HTML rendering logic for the table.
  */
 const renderSummaryTable = () => {
     const subjectStats = {};
@@ -174,8 +172,7 @@ const renderSummaryTable = () => {
         if (log.status === 'Not Held Yet') continue;
         const baseSubject = log.subject_name;
         if (!subjectStats[baseSubject]) { subjectStats[baseSubject] = { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }}; }
-        const isDoubleWeighted = (baseSubject === 'DA' || baseSubject === 'DSA' || log.category === 'Lab');
-        const weight = isDoubleWeighted ? 2 : 1;
+        const weight = isDoubleWeighted(baseSubject) ? 2 : 1;
         if (log.status !== 'Cancelled') {
             subjectStats[baseSubject][log.category].Held += weight;
             if (log.status === 'Attended') { subjectStats[baseSubject][log.category].Attended += weight; }
@@ -183,8 +180,9 @@ const renderSummaryTable = () => {
     }
 
     let tableHTML = `<h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary (up to yesterday)</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
-    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) { tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`; }
-    else {
+    if (!userProfile.unique_subjects || userProfile.unique_subjects.length === 0) {
+        tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
+    } else {
         userProfile.unique_subjects.sort().forEach(subjectName => {
             const stats = subjectStats[subjectName] || { Theory: { Attended: 0, Held: 0 }, Lab: { Attended: 0, Held: 0 }};
             let hasTheory = false, hasLab = false;
@@ -195,34 +193,29 @@ const renderSummaryTable = () => {
             if (!hasTheory && !hasLab) return;
 
             const showCombinedRow = hasTheory && hasLab;
-            const bunkingInfo = calculateBunkingAssistant(subjectName, stats.Theory.Attended + stats.Lab.Attended, stats.Theory.Held + stats.Lab.Held);
-            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
             
-            const rowSpan = showCombinedRow ? 'rowspan="2"' : '';
-            const bunkingCell = `<td class="px-6 py-4 text-sm" ${rowSpan}><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
-
             if (hasTheory) {
                 const percentage = stats.Theory.Held > 0 ? ((stats.Theory.Attended / stats.Theory.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" ${rowSpan}>${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? bunkingCell : ''}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}"><td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="${showCombinedRow ? 2 : 1}">${subjectName}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">Theory</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Theory.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
             }
             if (hasLab) {
                 const percentage = stats.Lab.Held > 0 ? ((stats.Lab.Attended / stats.Lab.Held) * 100).toFixed(1) : '100.0';
-                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? bunkingCell : ''}</tr>`;
+                tableHTML += `<tr class="${percentage < userProfile.attendance_threshold ? 'bg-red-50' : ''}">${hasTheory ? '' : `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900">${subjectName}</td>`}<td class="px-6 py-4 whitespace-nowrap text-gray-500">Lab</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Attended}</td><td class="px-6 py-4 whitespace-nowrap text-gray-500">${stats.Lab.Held}</td><td class="px-6 py-4 whitespace-nowrap font-medium ${percentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${percentage}%</td>${!showCombinedRow ? `<td class="px-6 py-4 text-sm"><div class="p-2 rounded-md bg-red-100 text-red-800">Cannot bunk. Must attend all.</div></td>` : ``}</tr>`;
             }
             if (showCombinedRow) {
                 const totalAttended = stats.Theory.Attended + stats.Lab.Attended;
                 const totalHeld = stats.Theory.Held + stats.Lab.Held;
                 const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) : '100.0';
-                const totalRowBunkingCell = `<td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td>`;
+                const bunkingInfo = calculateBunkingAssistant(subjectName, totalAttended, totalHeld);
+                const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                 tableHTML = tableHTML.replace(`<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="2">${subjectName}</td>`, `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900" rowspan="3">${subjectName}</td>`);
-                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td>${totalRowBunkingCell}</tr>`;
+                tableHTML += `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300"><td colspan="2" class="px-6 py-3 text-right text-gray-800">Total</td><td class="px-6 py-3">${totalAttended}</td><td class="px-6 py-3">${totalHeld}</td><td class="px-6 py-3 ${overallPercentage < userProfile.attendance_threshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}%</td><td class="px-6 py-3 text-sm"><div class="p-2 rounded-md ${statusColorClass}">${bunkingInfo.message}</div></td></tr>`;
             }
         });
     }
     tableHTML += '</tbody></table></div>';
     attendanceSummary.innerHTML = tableHTML;
 };
-
 
 const renderScheduleForDate = (dateStr) => {
     pendingChanges.clear();
