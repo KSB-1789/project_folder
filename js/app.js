@@ -541,7 +541,7 @@ const handleSetup = async (e) => {
         last_log_date: null
     };
     
-    const { data: newProfile, error } = await supabase.from('profiles').upsert(profileData).select().single();
+    const { error } = await supabase.from('profiles').upsert(profileData);
 
     if (error) {
         setupError.textContent = `Error saving profile: ${error.message}`;
@@ -550,10 +550,10 @@ const handleSetup = async (e) => {
         return;
     }
     
-    userProfile = newProfile;
-    isEditingMode = false;
-    saveButton.disabled = false;
-    await runFullAttendanceUpdate();
+    // **DEFINITIVE FIX**: After successfully saving, reload the page.
+    // This forces init() to run with guaranteed fresh data from the database,
+    // completely avoiding any race conditions.
+    window.location.reload();
 };
 
 const handleEditTimetable = () => {
