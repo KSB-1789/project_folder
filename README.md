@@ -58,8 +58,8 @@ Built with **HTML**, **Tailwind CSS**, **Vanilla JS**, and powered by **Supabase
 ### 🧾 Step 1: Clone This Repository
 
 ```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+git clone https://github.com/KSB-1789/project_folder.git
+cd project_folder
 ```
 
 ---
