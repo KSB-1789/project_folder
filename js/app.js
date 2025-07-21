@@ -1,5 +1,8 @@
 import { supabase } from './supabaseClient.js';
 
+// --- Constants ---
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
 // --- DOM Elements ---
 const loadingOverlay = document.getElementById('loading-overlay');
 const logoutButton = document.getElementById('logout-button');
@@ -50,12 +53,11 @@ class AppState {
         return this.pendingChanges.size > 0;
     }
 }
-
 const appState = new AppState();
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
-    if (appState.isLoading) return; // Prevent multiple loading overlays
+    if (appState.isLoading) return;
     appState.isLoading = true;
     const loadingText = document.getElementById('loading-text');
     if (loadingText) loadingText.textContent = message;
@@ -67,12 +69,14 @@ const hideLoading = () => {
     if (loadingOverlay) loadingOverlay.style.display = 'none';
 };
 
-const toYYYYMMDD = (dateInput) => {
-    const date = new Date(dateInput);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+const toYYYYMMDD = (date) => {
+    return date.toISOString().split('T')[0];
+};
+
+const getUTCToday = () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    return today;
 };
 
 const showCustomConfirm = (message) => {
@@ -101,10 +105,7 @@ const DataManager = {
                 .eq('id', appState.currentUser.id)
                 .single();
 
-            if (error && error.code !== 'PGRST116') {
-                throw error;
-            }
-
+            if (error && error.code !== 'PGRST116') throw error;
             return data;
         } catch (error) {
             throw new Error(`Failed to fetch profile: ${error.message}`);
@@ -113,10 +114,7 @@ const DataManager = {
 
     async saveProfile(profileData) {
         try {
-            const { error } = await supabase
-                .from('profiles')
-                .upsert(profileData);
-
+            const { error } = await supabase.from('profiles').upsert(profileData);
             if (error) throw error;
         } catch (error) {
             throw new Error(`Failed to save profile: ${error.message}`);
@@ -132,7 +130,6 @@ const DataManager = {
                 .order('date', { ascending: false });
 
             if (error) throw error;
-            
             appState.attendanceLog = data || [];
         } catch (error) {
             throw new Error(`Failed to load attendance log: ${error.message}`);
@@ -143,47 +140,32 @@ const DataManager = {
         if (!appState.hasPendingChanges()) return;
 
         try {
-            const updatePromises = Array.from(appState.pendingChanges).map(([id, status]) =>
-                supabase.from('attendance_log').update({ status }).eq('id', id)
-            );
+            const updates = Array.from(appState.pendingChanges, ([id, status]) => ({ id, status }));
+            const { error } = await supabase.from('attendance_log').upsert(updates);
+            if (error) throw error;
 
-            const results = await Promise.all(updatePromises);
-            const errors = results.filter(result => result.error);
-
-            if (errors.length > 0) {
-                throw new Error(errors[0].error.message);
-            }
-
-            // Update local state
             for (const [id, status] of appState.pendingChanges) {
                 const logIndex = appState.attendanceLog.findIndex(log => String(log.id) === id);
-                if (logIndex !== -1) {
-                    appState.attendanceLog[logIndex].status = status;
-                }
+                if (logIndex !== -1) appState.attendanceLog[logIndex].status = status;
             }
-
             appState.pendingChanges.clear();
         } catch (error) {
             throw new Error(`Failed to save attendance changes: ${error.message}`);
         }
     },
 
-    async deleteAttendanceForClasses(classesToDelete) {
-        if (classesToDelete.length === 0) return;
-
+    async deleteAttendanceForSubjects(subjectsToDelete) {
+        if (subjectsToDelete.length === 0) return;
         try {
-            const deletePromises = classesToDelete.map(cls =>
-                supabase
-                    .from('attendance_log')
-                    .delete()
-                    .eq('user_id', appState.currentUser.id)
-                    .eq('subject_name', cls.name)
-                    .eq('category', cls.category)
-            );
-
-            await Promise.all(deletePromises);
+            const subjectNames = subjectsToDelete.map(s => s.name);
+            const { error } = await supabase
+                .from('attendance_log')
+                .delete()
+                .eq('user_id', appState.currentUser.id)
+                .in('subject_name', subjectNames);
+            if (error) throw error;
         } catch (error) {
-            throw new Error(`Failed to delete attendance records: ${error.message}`);
+            throw new Error(`Failed to delete old attendance records: ${error.message}`);
         }
     }
 };
@@ -192,12 +174,8 @@ const DataManager = {
 const UIManager = {
     updateSaveButton() {
         if (!saveAttendanceContainer) return;
-        
         if (appState.hasPendingChanges() && !saveAttendanceContainer.querySelector('button')) {
-            saveAttendanceContainer.innerHTML = `
-                <button id="save-attendance-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105">
-                    Save Changes
-                </button>`;
+            saveAttendanceContainer.innerHTML = `<button id="save-attendance-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105">Save Changes</button>`;
         } else if (!appState.hasPendingChanges()) {
             saveAttendanceContainer.innerHTML = '';
         }
@@ -205,11 +183,8 @@ const UIManager = {
 
     showView(viewName) {
         const views = { onboarding: onboardingView, dashboard: dashboardView };
-        
         Object.entries(views).forEach(([name, element]) => {
-            if (element) {
-                element.style.display = name === viewName ? 'block' : 'none';
-            }
+            if (element) element.style.display = name === viewName ? 'block' : 'none';
         });
     },
 
@@ -222,93 +197,59 @@ const UIManager = {
 
 // --- Business Logic ---
 const AttendanceCalculator = {
-    isDoubleWeighted(subjectName) {
-        if (subjectName === 'DA' || subjectName === 'DSA') return true;
-        
-        if (!appState.userProfile?.timetable_json) return false;
-        
-        for (const day in appState.userProfile.timetable_json) {
-            if (appState.userProfile.timetable_json[day].some(lec => lec === `${subjectName} Lab`)) {
-                return true;
-            }
-        }
-        return false;
+    // FIX: Simplified weighting logic. This should ideally be a user-configurable property per subject.
+    getWeight(subjectName, category) {
+        if (category === 'Lab') return 2;
+        // You can add more complex rules here if needed
+        return 1;
     },
 
-    calculateBunkingAdvice(subjectName, totalAttended, totalHeld) {
+    calculateBunkingAdvice(totalAttended, totalHeld) {
         const threshold = appState.userProfile.attendance_threshold / 100;
-        const minAttended = Math.ceil(totalHeld * threshold);
-        
-        if (totalAttended < minAttended) {
-            return { 
-                status: 'danger', 
-                message: `Below ${appState.userProfile.attendance_threshold}%. Attend all!` 
-            };
+        if (totalHeld === 0) return { status: 'safe', message: 'No classes held yet.' };
+
+        const currentPercentage = (totalAttended / totalHeld) * 100;
+        if (currentPercentage < threshold) {
+            const lecturesToAttend = Math.ceil((threshold * totalHeld - totalAttended) / (1 - threshold));
+            return { status: 'danger', message: `Below ${appState.userProfile.attendance_threshold}%. Must attend next ${lecturesToAttend}.` };
         }
         
-        const bunksAvailable = totalAttended - minAttended;
-        
+        const bunksAvailable = Math.floor((totalAttended - threshold * totalHeld) / threshold);
         if (bunksAvailable >= 1) {
-            return { 
-                status: 'safe', 
-                message: `Safe. You can miss ${bunksAvailable} more.` 
+            return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more.` };
+        }
+        
+        return { status: 'warning', message: `Risky. At ${appState.userProfile.attendance_threshold}%. Cannot miss.` };
+    },
+    
+    // REFACTOR: Centralized summary calculation.
+    calculateSummary() {
+        const summary = {};
+        
+        // Initialize summary object for all unique subjects
+        (appState.userProfile.unique_subjects || []).forEach(name => {
+            summary[name] = {
+                Theory: { attended: 0, held: 0 },
+                Lab: { attended: 0, held: 0 }
             };
-        }
-        
-        return { 
-            status: 'warning', 
-            message: `Risky. At ${appState.userProfile.attendance_threshold}%. Cannot miss.` 
-        };
-    },
+        });
 
-    calculateHeldCounts() {
-        const heldCounts = {};
-        const today = new Date();
-        const startDate = new Date(appState.userProfile.start_date + 'T12:00:00Z');
-
-        if (startDate <= today) {
-            let currentDate = new Date(startDate);
-            while (currentDate <= today) {
-                const dayIndex = currentDate.getUTCDay();
-                if (dayIndex >= 1 && dayIndex <= 5) {
-                    const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
-                    const lecturesToday = appState.userProfile.timetable_json[dayName] || [];
-                    
-                    for (const subjectString of lecturesToday) {
-                        const parts = subjectString.split(' ');
-                        const category = parts.pop();
-                        const subject_name = parts.join(' ');
-                        
-                        if (!heldCounts[subject_name]) {
-                            heldCounts[subject_name] = { Theory: 0, Lab: 0 };
-                        }
-                        
-                        const weight = this.isDoubleWeighted(subject_name) ? 2 : 1;
-                        heldCounts[subject_name][category] += weight;
-                    }
-                }
-                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-            }
-        }
-
-        return heldCounts;
-    },
-
-    calculateAttendedCounts() {
-        const attendedCounts = {};
-        
         for (const log of appState.attendanceLog) {
-            if (log.status === 'Attended') {
-                const subjectName = log.subject_name;
-                if (!attendedCounts[subjectName]) {
-                    attendedCounts[subjectName] = { Theory: 0, Lab: 0 };
-                }
-                const weight = this.isDoubleWeighted(subjectName) ? 2 : 1;
-                attendedCounts[subjectName][log.category] += weight;
+            const { subject_name, category, status } = log;
+            if (!summary[subject_name]) continue; // Skip logs for subjects no longer in the timetable
+
+            const weight = this.getWeight(subject_name, category);
+            
+            // FIX: "Held" count is now accurate. A class is held if it was attended or missed.
+            if (status === 'Attended' || status === 'Missed') {
+                summary[subject_name][category].held += weight;
+            }
+            
+            if (status === 'Attended') {
+                summary[subject_name][category].attended += weight;
             }
         }
-
-        return attendedCounts;
+        return summary;
     }
 };
 
@@ -317,8 +258,7 @@ const Renderer = {
     renderSummaryTable() {
         if (!attendanceSummary || !appState.userProfile) return;
 
-        const heldCounts = AttendanceCalculator.calculateHeldCounts();
-        const attendedCounts = AttendanceCalculator.calculateAttendedCounts();
+        const summaryData = AttendanceCalculator.calculateSummary();
 
         let tableHTML = `
             <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3>
@@ -336,32 +276,30 @@ const Renderer = {
                     </thead>
                     <tbody class="bg-white divide-y divide-x divide-gray-200">`;
 
-        if (!appState.userProfile.unique_subjects || appState.userProfile.unique_subjects.length === 0) {
+        const subjects = appState.userProfile.unique_subjects || [];
+        if (subjects.length === 0) {
             tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
         } else {
-            appState.userProfile.unique_subjects.sort().forEach(subjectName => {
+            subjects.sort().forEach(subjectName => {
+                const subjectSummary = summaryData[subjectName];
                 const hasTheory = this.hasSubjectCategory(subjectName, 'Theory');
                 const hasLab = this.hasSubjectCategory(subjectName, 'Lab');
                 
                 if (!hasTheory && !hasLab) return;
 
-                const theoryHeld = heldCounts[subjectName]?.Theory || 0;
-                const theoryAttended = attendedCounts[subjectName]?.Theory || 0;
-                const labHeld = heldCounts[subjectName]?.Lab || 0;
-                const labAttended = attendedCounts[subjectName]?.Lab || 0;
-
+                const theoryData = subjectSummary.Theory;
+                const labData = subjectSummary.Lab;
+                
                 const showCombinedRow = hasTheory && hasLab;
                 
                 if (hasTheory) {
-                    tableHTML += this.renderSubjectRow(subjectName, 'Theory', theoryAttended, theoryHeld, showCombinedRow, true);
+                    tableHTML += this.renderSubjectRow(subjectName, 'Theory', theoryData.attended, theoryData.held, showCombinedRow, true);
                 }
-                
                 if (hasLab) {
-                    tableHTML += this.renderSubjectRow(subjectName, 'Lab', labAttended, labHeld, showCombinedRow, !hasTheory);
+                    tableHTML += this.renderSubjectRow(subjectName, 'Lab', labData.attended, labData.held, showCombinedRow, !hasTheory);
                 }
-
                 if (showCombinedRow) {
-                    tableHTML += this.renderCombinedRow(subjectName, theoryAttended + labAttended, theoryHeld + labHeld);
+                    tableHTML += this.renderCombinedRow(theoryData.attended + labData.attended, theoryData.held + labData.held);
                 }
             });
         }
@@ -370,46 +308,52 @@ const Renderer = {
         attendanceSummary.innerHTML = tableHTML;
     },
 
+    // QUALITY: Memoize this check for performance.
+    _hasCategoryCache: new Map(),
     hasSubjectCategory(subjectName, category) {
-        for (const day in appState.userProfile.timetable_json) {
-            if (appState.userProfile.timetable_json[day].includes(`${subjectName} ${category}`)) {
+        const cacheKey = `${subjectName}-${category}`;
+        if (this._hasCategoryCache.has(cacheKey)) return this._hasCategoryCache.get(cacheKey);
+
+        for (const day of WEEKDAYS) {
+            if ((appState.userProfile.timetable_json[day] || []).includes(`${subjectName} ${category}`)) {
+                this._hasCategoryCache.set(cacheKey, true);
                 return true;
             }
         }
+        this._hasCategoryCache.set(cacheKey, false);
         return false;
     },
 
-    renderSubjectRow(subjectName, category, attended, held, showCombined, isFirst) {
-        const percentage = held > 0 ? ((attended / held) * 100).toFixed(1) + '%' : '100.0%';
+    renderSubjectRow(subjectName, category, attended, held, showCombined, isFirstRow) {
+        const percentage = held > 0 ? ((attended / held) * 100).toFixed(1) + '%' : 'N/A';
         const isBelowThreshold = held > 0 && ((attended / held) * 100) < appState.userProfile.attendance_threshold;
-        const rowspan = showCombined ? 3 : 1;
         
-        const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, attended, held);
-        const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' 
-                                : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' 
-                                : 'bg-red-100 text-red-800';
-
-        const subjectCell = isFirst ? `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="${rowspan}">${subjectName}</td>` : '';
-        const bunkingCell = !showCombined ? `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>` : '';
-
+        let bunkingInfoCell = '';
+        if (!showCombined) {
+            const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(attended, held);
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+            bunkingInfoCell = `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>`;
+        }
+        
+        const rowspan = showCombined ? 3 : 1;
+        const subjectCell = isFirstRow ? `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="${rowspan}">${subjectName}</td>` : '';
+        
         return `<tr class="${isBelowThreshold ? 'bg-red-50' : ''}">
                     ${subjectCell}
                     <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">${category}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${attended}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${held}</td>
                     <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${isBelowThreshold ? 'text-red-600' : 'text-gray-900'}">${percentage}</td>
-                    ${bunkingCell}
+                    ${bunkingInfoCell}
                 </tr>`;
     },
 
-    renderCombinedRow(subjectName, totalAttended, totalHeld) {
-        const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) + '%' : '100.0%';
+    renderCombinedRow(totalAttended, totalHeld) {
+        const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) + '%' : 'N/A';
         const isBelowThreshold = totalHeld > 0 && ((totalAttended / totalHeld) * 100) < appState.userProfile.attendance_threshold;
         
-        const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, totalAttended, totalHeld);
-        const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' 
-                                : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' 
-                                : 'bg-red-100 text-red-800';
+        const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(totalAttended, totalHeld);
+        const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
 
         return `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300">
                     <td class="px-6 py-3 text-left text-gray-800">Total</td>
@@ -433,17 +377,15 @@ const Renderer = {
         }
 
         const selectedDate = new Date(dateStr + 'T12:00:00Z');
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        const showNotHeldYet = selectedDate >= today;
+        const today = getUTCToday();
+        const canEdit = selectedDate <= today;
 
         let logHTML = `<div class="space-y-4">`;
-        
         lecturesOnDate
-            .sort((a, b) => a.subject_name.localeCompare(b.subject_name))
+            .sort((a, b) => `${a.subject_name} ${a.category}`.localeCompare(`${b.subject_name} ${b.category}`))
             .forEach(log => {
                 const status = appState.pendingChanges.get(String(log.id)) || log.status;
-                logHTML += this.renderLectureItem(log, status, showNotHeldYet);
+                logHTML += this.renderLectureItem(log, status, canEdit);
             });
         
         logHTML += `</div>`;
@@ -451,31 +393,34 @@ const Renderer = {
         UIManager.updateSaveButton();
     },
 
-    renderLectureItem(log, currentStatus, showNotHeldYet) {
-        const getButtonClass = (btnStatus) => {
+    renderLectureItem(log, currentStatus, canEdit) {
+        const getButtonClass = (btnStatus, isActive) => {
             const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors';
-            if (currentStatus === btnStatus) {
-                switch(btnStatus) {
-                    case 'Attended': return `${baseClass} bg-green-500 text-white`;
-                    case 'Missed': return `${baseClass} bg-red-500 text-white`;
-                    case 'Cancelled': return `${baseClass} bg-yellow-500 text-white`;
-                    case 'Not Held Yet': return `${baseClass} bg-gray-400 text-white`;
-                }
+            if (isActive) {
+                const activeClasses = {
+                    'Attended': 'bg-green-500 text-white',
+                    'Missed': 'bg-red-500 text-white',
+                    'Cancelled': 'bg-yellow-500 text-white',
+                    'Not Held Yet': 'bg-gray-400 text-white'
+                };
+                return `${baseClass} ${activeClasses[btnStatus]}`;
             }
             return `${baseClass} bg-gray-200 text-gray-700 hover:bg-gray-300`;
         };
 
-        const notHeldYetButton = showNotHeldYet ? 
-            `<button data-status="Not Held Yet" class="${getButtonClass('Not Held Yet')}">Not Held Yet</button>` : '';
-
+        const buttons = ['Attended', 'Missed', 'Cancelled'];
+        let buttonHTML = '';
+        if (canEdit) {
+            buttonHTML = buttons.map(status => `<button data-status="${status}" class="${getButtonClass(status, currentStatus === status)}">${status}</button>`).join('');
+        } else {
+            buttonHTML = `<button data-status="Not Held Yet" class="${getButtonClass('Not Held Yet', true)}" disabled>Not Held Yet</button>`;
+        }
+        
         return `
             <div class="log-item flex items-center justify-between p-4 bg-white rounded-lg shadow-sm">
                 <strong class="text-gray-800">${log.subject_name} (${log.category})</strong>
                 <div class="log-actions flex flex-wrap gap-2 justify-end" data-log-id="${log.id}">
-                    ${notHeldYetButton}
-                    <button data-status="Attended" class="${getButtonClass('Attended')}">Attended</button>
-                    <button data-status="Missed" class="${getButtonClass('Missed')}">Missed</button>
-                    <button data-status="Cancelled" class="${getButtonClass('Cancelled')}">Cancelled</button>
+                    ${buttonHTML}
                 </div>
             </div>`;
     },
@@ -498,24 +443,22 @@ const Renderer = {
             startDateInput: document.getElementById('start-date'),
             minAttendanceInput: document.getElementById('min-attendance')
         };
-
+        
         if (appState.isEditingMode) {
-            if (elements.setupTitle) elements.setupTitle.textContent = "Edit Timetable";
-            if (elements.setupSubtitle) elements.setupSubtitle.textContent = "Add or remove subjects and classes below. Your existing attendance will be preserved.";
-            if (elements.saveTimetableBtn) elements.saveTimetableBtn.textContent = "Save Changes and Re-calculate";
-            if (elements.startDateInput) {
-                elements.startDateInput.value = appState.userProfile.start_date;
-                elements.startDateInput.disabled = true;
-            }
-            if (elements.minAttendanceInput) elements.minAttendanceInput.value = appState.userProfile.attendance_threshold;
+            elements.setupTitle.textContent = "Edit Timetable";
+            elements.setupSubtitle.textContent = "Modify subjects and classes. Existing attendance data for changed subjects will be preserved.";
+            elements.saveTimetableBtn.textContent = "Save Changes";
+            elements.startDateInput.value = appState.userProfile.start_date;
+            elements.startDateInput.disabled = true; // Start date should not be changed after initial setup
+            elements.minAttendanceInput.value = appState.userProfile.attendance_threshold;
         } else {
-            if (elements.setupTitle) elements.setupTitle.textContent = "Initial Setup";
-            if (elements.setupSubtitle) elements.setupSubtitle.textContent = "Welcome! Please build your timetable below.";
-            if (elements.saveTimetableBtn) elements.saveTimetableBtn.textContent = "Save and Build Dashboard";
-            if (elements.startDateInput) elements.startDateInput.disabled = false;
+            elements.setupTitle.textContent = "Initial Setup";
+            elements.setupSubtitle.textContent = "Welcome! Please build your timetable below.";
+            elements.saveTimetableBtn.textContent = "Save and Build Dashboard";
+            elements.startDateInput.disabled = false;
         }
     },
-
+    
     renderSubjectList(container) {
         container.innerHTML = appState.setupSubjects.map((sub, index) => `
             <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
@@ -525,10 +468,8 @@ const Renderer = {
     },
 
     renderTimetableGrid(container) {
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-        container.innerHTML = days.map(day => {
-            const scheduledClasses = appState.isEditingMode ? 
-                (appState.userProfile.timetable_json[day] || []) : [];
+        container.innerHTML = WEEKDAYS.map(day => {
+            const scheduledClasses = appState.isEditingMode ? (appState.userProfile.timetable_json[day] || []) : [];
             
             return `
                 <div class="day-column bg-gray-50 p-3 rounded-lg">
@@ -552,6 +493,7 @@ const Renderer = {
     },
 
     renderDashboard() {
+        this._hasCategoryCache.clear(); // Clear cache before re-rendering
         this.renderSummaryTable();
         
         const todayStr = toYYYYMMDD(new Date());
@@ -566,90 +508,63 @@ const Renderer = {
 // --- Attendance Population Logic ---
 const AttendancePopulator = {
     async populateAttendanceLog() {
-        const today = new Date();
-        const todayStr = toYYYYMMDD(today);
-        const startDate = new Date(appState.userProfile.start_date + 'T12:00:00Z');
+        const today = getUTCToday();
+        const startDate = new Date(appState.userProfile.start_date + 'T00:00:00Z');
 
-        let currentDate = appState.userProfile.last_log_date 
-            ? new Date(appState.userProfile.last_log_date + 'T12:00:00Z')
-            : new Date(startDate);
-
+        // Determine the actual start for populating logs
+        let populateFromDate = new Date(startDate);
         if (appState.userProfile.last_log_date) {
-            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-        }
-        
-        if (currentDate > today) {
-            await this.updateLastLogDate(todayStr);
-            return;
+            const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
+            populateFromDate = new Date(lastLogDate.setDate(lastLogDate.getDate() + 1));
         }
 
-        let lastSuccessfulDateStr = appState.userProfile.last_log_date;
+        if (populateFromDate > today) {
+            return; // Already up-to-date
+        }
 
-        while (toYYYYMMDD(currentDate) <= todayStr) {
-            try {
-                const dateStr = toYYYYMMDD(currentDate);
-                const dayIndex = currentDate.getUTCDay();
+        let entriesToUpsert = [];
+        let currentDate = new Date(populateFromDate);
+
+        while (currentDate <= today) {
+            const dayIndex = currentDate.getUTCDay(); // 0=Sun, 1=Mon...
+            if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+                const dayName = WEEKDAYS[dayIndex - 1];
+                const lecturesForDay = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
                 
-                if (dayIndex >= 1 && dayIndex <= 5) {
-                    const dailyEntries = this.generateDailyEntries(currentDate, dateStr, todayStr);
+                lecturesForDay.forEach(subjectString => {
+                    const parts = subjectString.split(' ');
+                    const category = parts.pop();
+                    const subject_name = parts.join(' ');
                     
-                    if (dailyEntries.length > 0) {
-                        await this.insertDailyEntries(dailyEntries);
-                    }
-                }
-                
-                lastSuccessfulDateStr = dateStr;
-                currentDate.setUTCDate(currentDate.getUTCDate() + 1);
-            } catch (error) {
-                console.error(`Failed to populate log for date: ${toYYYYMMDD(currentDate)}`, error);
-                if (lastSuccessfulDateStr) {
-                    await this.updateLastLogDate(lastSuccessfulDateStr);
-                }
-                throw error;
+                    entriesToUpsert.push({
+                        user_id: appState.currentUser.id,
+                        date: toYYYYMMDD(currentDate),
+                        subject_name,
+                        category,
+                        status: 'Missed' // Default for past days
+                    });
+                });
             }
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+
+        if (entriesToUpsert.length > 0) {
+            const { error } = await supabase.from('attendance_log').upsert(entriesToUpsert, { onConflict: 'user_id,date,subject_name,category' });
+            if (error) throw new Error(`Database error during log population: ${error.message}`);
         }
         
-        await this.updateLastLogDate(todayStr);
-    },
-
-    generateDailyEntries(currentDate, dateStr, todayStr) {
-        const dayIndex = currentDate.getUTCDay();
-        const dayName = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dayIndex];
-        const defaultStatus = dateStr === todayStr ? 'Not Held Yet' : 'Missed';
-        
-        const uniqueLecturesToday = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
-
-        return uniqueLecturesToday.map(subjectString => {
-            const parts = subjectString.split(' ');
-            const category = parts.pop();
-            const subject_name = parts.join(' ');
-            
-            return {
-                user_id: appState.currentUser.id,
-                date: dateStr,
-                subject_name,
-                category,
-                status: defaultStatus
-            };
-        });
-    },
-
-    async insertDailyEntries(dailyEntries) {
-        const { error } = await supabase
-            .from('attendance_log')
-            .upsert(dailyEntries, { onConflict: 'user_id,date,subject_name,category' });
-
-        if (error) {
-            throw new Error(`Database error: ${error.message}`);
-        }
+        // Always update last_log_date to today
+        await this.updateLastLogDate(toYYYYMMDD(today));
     },
 
     async updateLastLogDate(dateStr) {
         if (appState.userProfile.last_log_date !== dateStr) {
-            await supabase
+            const { error } = await supabase
                 .from('profiles')
                 .update({ last_log_date: dateStr })
                 .eq('id', appState.currentUser.id);
+            if (error) throw error;
+            appState.userProfile.last_log_date = dateStr;
         }
     }
 };
@@ -660,14 +575,7 @@ const init = async () => {
         showLoading('Initializing...');
         
         const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-            console.error('Session error:', error);
-            window.location.href = '/index.html';
-            return;
-        }
-        
-        if (!session) {
+        if (error || !session) {
             window.location.href = '/index.html';
             return;
         }
@@ -698,9 +606,7 @@ const runFullAttendanceUpdate = async () => {
         showLoading('Loading your dashboard...');
         await DataManager.loadAttendanceLog();
         
-        // Clear any stale pending changes
         appState.pendingChanges.clear();
-        
         Renderer.renderDashboard();
     } catch (error) {
         handleError(error, 'Failed to update attendance');
@@ -720,24 +626,33 @@ const EventHandlers = {
             showLoading(appState.isEditingMode ? 'Updating Timetable...' : 'Saving Timetable...');
             
             const setupError = document.getElementById('setup-error');
-            if (setupError) setupError.textContent = '';
+            setupError.textContent = '';
 
             const formData = this.getSetupFormData();
-            
             if (!this.validateSetupForm(formData)) {
-                const setupError = document.getElementById('setup-error');
-                if (setupError) setupError.textContent = 'Please set a start date, percentage, and add at least one subject.';
+                setupError.textContent = 'Please set a start date, percentage, and add at least one subject.';
                 return;
             }
 
+            const oldProfile = appState.userProfile;
+            const newProfileData = this.buildProfileData(formData);
+
             if (appState.isEditingMode) {
-                await this.handleTimetableEdit(formData);
+                const subjectsToDelete = this.findSubjectsToDelete(oldProfile.unique_subjects, newProfileData.unique_subjects);
+                if (subjectsToDelete.length > 0) {
+                    const confirmed = await showCustomConfirm(`The following subjects will be completely removed from your history: ${subjectsToDelete.map(s=>s.name).join(', ')}. Are you sure?`);
+                    if (!confirmed) return;
+                    await DataManager.deleteAttendanceForSubjects(subjectsToDelete);
+                }
             }
 
-            const profileData = this.buildProfileData(formData);
-            await DataManager.saveProfile(profileData);
+            await DataManager.saveProfile(newProfileData);
+            appState.userProfile = { ...oldProfile, ...newProfileData }; // Update local state immediately
+
+            // REFACTOR: No page reload. Just re-calculate and re-render.
+            await runFullAttendanceUpdate();
+            UIManager.showView('dashboard');
             
-            window.location.reload();
         } catch (error) {
             handleError(error, 'Setup failed');
         } finally {
@@ -751,9 +666,7 @@ const EventHandlers = {
         const minAttendanceInput = document.getElementById('min-attendance');
         
         const timetable = {};
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-        
-        days.forEach(day => {
+        WEEKDAYS.forEach(day => {
             const classList = document.querySelectorAll(`.day-schedule-list[data-day="${day}"] li`);
             timetable[day] = Array.from(classList).map(li => li.dataset.value);
         });
@@ -770,68 +683,48 @@ const EventHandlers = {
         return formData.startDate && formData.minAttendance && appState.setupSubjects.length > 0;
     },
 
-    async handleTimetableEdit(formData) {
-        const oldTimetable = appState.userProfile.timetable_json;
-        const classesToDelete = this.findClassesToDelete(oldTimetable, formData.timetable);
-        
-        if (classesToDelete.length > 0) {
-            await DataManager.deleteAttendanceForClasses(classesToDelete);
-        }
+    // REFACTOR: Simplified logic to find subjects that were completely removed.
+    findSubjectsToDelete(oldSubjects, newSubjects) {
+        const oldSet = new Set(oldSubjects);
+        const newSet = new Set(newSubjects);
+        const toDelete = [];
+        oldSet.forEach(oldSub => {
+            if (!newSet.has(oldSub)) {
+                toDelete.push({ name: oldSub });
+            }
+        });
+        return toDelete;
     },
-
-    findClassesToDelete(oldTimetable, newTimetable) {
-        const classesToDelete = [];
-        
-        for (const day in oldTimetable) {
-            oldTimetable[day].forEach(oldClass => {
-                if (!newTimetable[day] || !newTimetable[day].includes(oldClass)) {
-                    const parts = oldClass.split(' ');
-                    const category = parts.pop();
-                    const name = parts.join(' ');
-                    
-                    // Check if this subject+category exists anywhere in new timetable
-                    let existsInNewTimetable = false;
-                    for (const newDay in newTimetable) {
-                        if (newTimetable[newDay].includes(oldClass)) {
-                            existsInNewTimetable = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!existsInNewTimetable) {
-                        classesToDelete.push({ name, category });
-                    }
-                }
-            });
-        }
-        
-        return [...new Map(classesToDelete.map(item => [`${item.name}-${item.category}`, item])).values()];
-    },
-
+    
+    // REFACTOR: Smarter data building to preserve state during edits.
     buildProfileData(formData) {
-        return {
+        const baseData = {
             id: appState.currentUser.id,
             start_date: formData.startDate,
             timetable_json: formData.timetable,
             unique_subjects: formData.uniqueSubjects,
             attendance_threshold: parseInt(formData.minAttendance),
-            last_log_date: null
         };
+        
+        // FIX: Only set last_log_date to null on initial setup. Preserve it during edits.
+        if (appState.isEditingMode) {
+            return { ...baseData, last_log_date: appState.userProfile.last_log_date };
+        } else {
+            return { ...baseData, last_log_date: null };
+        }
     },
-
+    
     async handleEditTimetable() {
         try {
             if (appState.hasPendingChanges()) {
-                const proceed = await showCustomConfirm("You have unsaved attendance changes. Are you sure you want to edit the timetable? Unsaved changes will be lost.");
+                const proceed = await showCustomConfirm("You have unsaved attendance changes that will be lost. Continue?");
                 if (!proceed) return;
-                
                 appState.pendingChanges.clear();
                 UIManager.updateSaveButton();
             }
 
             appState.isEditingMode = true;
             this.prepareEditingSubjects();
-            
             Renderer.renderOnboardingUI();
             UIManager.showView('onboarding');
         } catch (error) {
@@ -840,11 +733,9 @@ const EventHandlers = {
     },
 
     prepareEditingSubjects() {
-        appState.setupSubjects = [];
         const subjectSet = new Set();
-        
-        for (const day in appState.userProfile.timetable_json) {
-            appState.userProfile.timetable_json[day].forEach(cls => subjectSet.add(cls));
+        for (const day of WEEKDAYS) {
+            (appState.userProfile.timetable_json[day] || []).forEach(cls => subjectSet.add(cls));
         }
         
         appState.setupSubjects = Array.from(subjectSet).map(cls => {
@@ -858,7 +749,6 @@ const EventHandlers = {
     handleAddSubject() {
         const nameInput = document.getElementById('new-subject-name');
         const categorySelect = document.getElementById('new-subject-category');
-        
         if (!nameInput || !categorySelect) return;
         
         const name = nameInput.value.trim();
@@ -886,17 +776,11 @@ const EventHandlers = {
         const list = document.querySelector(`.day-schedule-list[data-day="${day}"]`);
         if (!list) return;
         
-        const li = document.createElement('li');
-        li.className = 'flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded';
-        li.textContent = select.options[select.selectedIndex].text;
-        li.dataset.value = select.value;
-        
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2';
-        removeBtn.textContent = 'x';
-        li.appendChild(removeBtn);
-        list.appendChild(li);
+        list.insertAdjacentHTML('beforeend', `
+            <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${select.value}">
+                ${select.options[select.selectedIndex].text}
+                <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
+            </li>`);
         
         select.value = '';
     },
@@ -906,48 +790,20 @@ const EventHandlers = {
         if (!button) return;
 
         const newStatus = button.dataset.status;
-        const buttonGroup = button.parentElement;
-        const logId = buttonGroup.dataset.logId;
+        const logId = button.closest('.log-actions').dataset.logId;
 
         appState.pendingChanges.set(logId, newStatus);
-
-        // Update button visual states
-        this.updateAttendanceButtonStates(buttonGroup, button, newStatus);
-        UIManager.updateSaveButton();
-    },
-
-    updateAttendanceButtonStates(buttonGroup, activeButton, newStatus) {
-        buttonGroup.querySelectorAll('.log-btn').forEach(btn => {
-            btn.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500', 'bg-gray-400', 'text-white');
-            btn.classList.add('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
-        });
         
-        activeButton.classList.remove('bg-gray-200', 'text-gray-700', 'hover:bg-gray-300');
-        
-        const activeClasses = {
-            'Attended': ['bg-green-500', 'text-white'],
-            'Missed': ['bg-red-500', 'text-white'],
-            'Cancelled': ['bg-yellow-500', 'text-white'],
-            'Not Held Yet': ['bg-gray-400', 'text-white']
-        };
-        
-        activeButton.classList.add(...(activeClasses[newStatus] || []));
+        // Re-render just the item for simplicity and accuracy
+        Renderer.renderScheduleForDate(appState.currentViewDate);
     },
 
     async handleSaveChanges() {
         if (!appState.hasPendingChanges()) return;
-        
         try {
             showLoading('Saving...');
             await DataManager.saveAttendanceChanges();
-            
-            UIManager.updateSaveButton();
-            Renderer.renderSummaryTable();
-            
-            // Re-render current date to show saved changes
-            if (appState.currentViewDate) {
-                Renderer.renderScheduleForDate(appState.currentViewDate);
-            }
+            Renderer.renderDashboard();
         } catch (error) {
             handleError(error, 'Failed to save changes');
         } finally {
@@ -957,70 +813,53 @@ const EventHandlers = {
 
     async handleDateChange(e) {
         if (appState.hasPendingChanges()) {
-            const discard = await showCustomConfirm("You have unsaved changes. Are you sure you want to discard them?");
+            const discard = await showCustomConfirm("You have unsaved changes. Discard them?");
             if (!discard) {
-                // Restore original date
                 UIManager.setDatePicker(appState.currentViewDate || toYYYYMMDD(new Date()));
                 return;
             }
             appState.pendingChanges.clear();
-            UIManager.updateSaveButton();
         }
-        
         Renderer.renderScheduleForDate(e.target.value);
     },
-
+    
+    // Combined logic for extra day handling
     async handleAddExtraDay(e) {
         e.preventDefault();
-        
         try {
             const form = e.target;
             const extraDateStr = form.elements['extra-day-date'].value;
             const weekday = form.elements['weekday-to-follow'].value;
 
             if (!extraDateStr || !weekday) {
-                showCustomConfirm("Please select both a date and a weekday schedule to follow.");
+                showCustomConfirm("Please select both a date and a weekday schedule.");
                 return;
             }
 
             showLoading('Adding extra day...');
-            
             const lecturesToAdd = appState.userProfile.timetable_json[weekday] || [];
             if (lecturesToAdd.length === 0) {
-                showCustomConfirm(`There are no classes scheduled on a ${weekday} to add.`);
+                showCustomConfirm(`No classes are scheduled on a ${weekday}.`);
                 return;
             }
-            
-            const today = new Date();
-            today.setUTCHours(0, 0, 0, 0);
-            const selectedDate = new Date(extraDateStr + 'T12:00:00Z');
-            const status = selectedDate < today ? 'Missed' : 'Not Held Yet';
+
+            const today = getUTCToday();
+            const selectedDate = new Date(extraDateStr + 'T00:00:00Z');
+            const defaultStatus = selectedDate < today ? 'Missed' : 'Attended';
 
             const newLogEntries = lecturesToAdd.map(subjectString => {
                 const parts = subjectString.split(' ');
                 const category = parts.pop();
                 const subject_name = parts.join(' ');
-                return { 
-                    user_id: appState.currentUser.id, 
-                    date: extraDateStr, 
-                    subject_name, 
-                    category, 
-                    status 
-                };
+                return { user_id: appState.currentUser.id, date: extraDateStr, subject_name, category, status: defaultStatus };
             });
 
-            const { error } = await supabase
-                .from('attendance_log')
-                .upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
-                
-            if (error) throw error;
-
+            await AttendancePopulator.insertDailyEntries(newLogEntries);
             await DataManager.loadAttendanceLog();
             UIManager.setDatePicker(extraDateStr);
-            Renderer.renderScheduleForDate(extraDateStr);
+            Renderer.renderDashboard();
             
-            const extraDayModal = document.getElementById('extra-day-modal');
-            if (extraDayModal) extraDayModal.style.display = 'none';
+            extraDayModal.style.display = 'none';
             form.reset();
         } catch (error) {
             handleError(error, 'Failed to add extra day');
@@ -1031,108 +870,73 @@ const EventHandlers = {
 };
 
 // --- Event Listener Management ---
-let eventListeners = [];
+let isInitialized = false;
 
-const addEventListenerWithCleanup = (element, event, handler) => {
-    if (element) {
-        element.addEventListener(event, handler);
-        eventListeners.push({ element, event, handler });
-    }
-};
+const initializeApp = () => {
+    if (isInitialized) return;
 
-const cleanupEventListeners = () => {
-    eventListeners.forEach(({ element, event, handler }) => {
-        element.removeEventListener(event, handler);
-    });
-    eventListeners = [];
-};
-
-// --- Initialize Event Listeners ---
-document.addEventListener('DOMContentLoaded', init);
-window.addEventListener('beforeunload', cleanupEventListeners);
-
-// Core UI Events
-addEventListenerWithCleanup(logoutButton, 'click', async () => {
-    try {
+    document.addEventListener('DOMContentLoaded', init);
+    
+    logoutButton?.addEventListener('click', async () => {
         await supabase.auth.signOut();
         window.location.href = '/index.html';
-    } catch (error) {
-        console.error('Logout error:', error);
-    }
-});
+    });
 
-addEventListenerWithCleanup(setupForm, 'submit', EventHandlers.handleSetup.bind(EventHandlers));
+    setupForm?.addEventListener('submit', EventHandlers.handleSetup.bind(EventHandlers));
+    
+    onboardingView?.addEventListener('click', (e) => {
+        if (e.target.id === 'add-subject-btn') EventHandlers.handleAddSubject();
+        else if (e.target.classList.contains('remove-subject-btn')) {
+            appState.setupSubjects.splice(e.target.dataset.index, 1);
+            Renderer.renderOnboardingUI();
+        } 
+        else if (e.target.classList.contains('add-class-btn')) EventHandlers.handleAddClassToDay(e.target.dataset.day);
+        else if (e.target.classList.contains('remove-class-btn')) e.target.parentElement.remove();
+    });
 
-// Onboarding Events
-addEventListenerWithCleanup(onboardingView, 'click', (e) => {
-    if (e.target.id === 'add-subject-btn') {
-        EventHandlers.handleAddSubject();
-    } else if (e.target.classList.contains('remove-subject-btn')) {
-        appState.setupSubjects.splice(e.target.dataset.index, 1);
-        Renderer.renderOnboardingUI();
-    } else if (e.target.classList.contains('add-class-btn')) {
-        EventHandlers.handleAddClassToDay(e.target.dataset.day);
-    } else if (e.target.classList.contains('remove-class-btn')) {
-        e.target.parentElement.remove();
-    }
-});
-
-// Settings Events
-addEventListenerWithCleanup(settingsSection, 'click', async (e) => {
-    try {
-        if (e.target.id === 'edit-timetable-btn') {
-            await EventHandlers.handleEditTimetable();
-        } else if (e.target.id === 'clear-attendance-btn') {
-            const confirmed = await showCustomConfirm("Are you sure? This will reset all attendance records but will keep your timetable.");
-            if (!confirmed) return;
-            
+    settingsSection?.addEventListener('click', async (e) => {
+        if (e.target.id === 'edit-timetable-btn') await EventHandlers.handleEditTimetable();
+        else if (e.target.id === 'clear-attendance-btn') {
+            if (!await showCustomConfirm("Are you sure? This resets all attendance but keeps your timetable.")) return;
             showLoading('Clearing records...');
             await supabase.from('attendance_log').delete().eq('user_id', appState.currentUser.id);
             await supabase.from('profiles').update({ last_log_date: null }).eq('id', appState.currentUser.id);
             window.location.reload();
         }
-    } catch (error) {
-        handleError(error, 'Settings action failed');
-    }
-});
+    });
 
-// Dashboard Events
-addEventListenerWithCleanup(actionsSection, 'click', (e) => {
-    if (e.target.id === 'save-attendance-btn') {
-        EventHandlers.handleSaveChanges();
-    } else if (e.target.closest('.log-actions')) {
-        EventHandlers.handleMarkAttendance(e);
-    } else if (e.target.id === 'show-extra-day-modal-btn') {
-        const extraDayModal = document.getElementById('extra-day-modal');
-        if (extraDayModal) extraDayModal.style.display = 'flex';
-    }
-});
+    // Event Delegation for dynamic content
+    document.body.addEventListener('click', (e) => {
+        if (e.target.id === 'save-attendance-btn') EventHandlers.handleSaveChanges();
+        else if (e.target.closest('.log-actions')) EventHandlers.handleMarkAttendance(e);
+        else if (e.target.id === 'show-extra-day-modal-btn') {
+            if (extraDayModal) extraDayModal.style.display = 'flex';
+        }
+    });
 
-// Modal Events
-addEventListenerWithCleanup(extraDayModal, 'click', (e) => {
-    if (e.target.id === 'cancel-extra-day-btn' || e.target.id === 'extra-day-modal') {
-        extraDayModal.style.display = 'none';
-        const extraDayForm = document.getElementById('extra-day-form');
-        if (extraDayForm) extraDayForm.reset();
-    }
-});
+    extraDayModal?.addEventListener('click', (e) => {
+        if (e.target.id === 'cancel-extra-day-btn' || e.target.id === 'extra-day-modal') {
+            extraDayModal.style.display = 'none';
+            if (extraDayForm) extraDayForm.reset();
+        }
+    });
 
-addEventListenerWithCleanup(extraDayForm, 'submit', EventHandlers.handleAddExtraDay.bind(EventHandlers));
-addEventListenerWithCleanup(historicalDatePicker, 'change', EventHandlers.handleDateChange.bind(EventHandlers));
-
-// Confirmation Modal Events
-addEventListenerWithCleanup(confirmYesBtn, 'click', () => {
-    if (customConfirmModal) customConfirmModal.style.display = 'none';
-    if (appState.confirmResolve) {
-        appState.confirmResolve(true);
+    extraDayForm?.addEventListener('submit', EventHandlers.handleAddExtraDay.bind(EventHandlers));
+    historicalDatePicker?.addEventListener('change', EventHandlers.handleDateChange.bind(EventHandlers));
+    
+    confirmYesBtn?.addEventListener('click', () => {
+        if (customConfirmModal) customConfirmModal.style.display = 'none';
+        if (appState.confirmResolve) appState.confirmResolve(true);
         appState.confirmResolve = null;
-    }
-});
+    });
 
-addEventListenerWithCleanup(confirmNoBtn, 'click', () => {
-    if (customConfirmModal) customConfirmModal.style.display = 'none';
-    if (appState.confirmResolve) {
-        appState.confirmResolve(false);
+    confirmNoBtn?.addEventListener('click', () => {
+        if (customConfirmModal) customConfirmModal.style.display = 'none';
+        if (appState.confirmResolve) appState.confirmResolve(false);
         appState.confirmResolve = null;
-    }
-});
+    });
+
+    isInitialized = true;
+};
+
+initializeApp();
