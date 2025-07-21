@@ -201,22 +201,29 @@ const AttendanceCalculator = {
         return 1;
     },
 
+    // FINAL FIX: Improved Bunking Assistant messages for clarity.
     calculateBunkingAdvice(totalAttended, totalHeld) {
         const threshold = appState.userProfile.attendance_threshold / 100;
-        if (totalHeld === 0) return { status: 'safe', message: 'No classes held yet.' };
+        const thresholdPercent = appState.userProfile.attendance_threshold;
+
+        if (totalHeld === 0) {
+            return { status: 'safe', message: 'No classes held yet.' };
+        }
 
         const currentPercentage = (totalAttended / totalHeld) * 100;
+
         if (currentPercentage < threshold) {
             const lecturesToAttend = Math.ceil((threshold * totalHeld - totalAttended) / (1 - threshold));
-            return { status: 'danger', message: `Below ${appState.userProfile.attendance_threshold}%. Must attend next ${lecturesToAttend}.` };
+            return { status: 'danger', message: `Attend next ${lecturesToAttend} classes to reach ${thresholdPercent}%.` };
         }
         
         const bunksAvailable = Math.floor((totalAttended - threshold * totalHeld) / threshold);
+        
         if (bunksAvailable >= 1) {
-            return { status: 'safe', message: `Safe. You can miss ${bunksAvailable} more.` };
+            return { status: 'safe', message: `Safe to miss ${bunksAvailable}. Your % will stay above ${thresholdPercent}%.` };
         }
         
-        return { status: 'warning', message: `Risky. At ${appState.userProfile.attendance_threshold}%. Cannot miss.` };
+        return { status: 'warning', message: `At ${currentPercentage.toFixed(1)}%. Cannot miss any more classes.` };
     },
     
     calculateSummary() {
@@ -382,7 +389,6 @@ const Renderer = {
         UIManager.updateSaveButton();
     },
 
-    // FIX: Removed restrictive logic. All buttons are now always available.
     renderLectureItem(log, currentStatus) {
         const getButtonClass = (btnStatus, isActive) => {
             const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors';
@@ -398,10 +404,8 @@ const Renderer = {
             return `${baseClass} bg-gray-200 text-gray-700 hover:bg-gray-300`;
         };
 
-        // All buttons are now available for any date.
         const buttons = ['Attended', 'Missed', 'Cancelled', 'Not Held Yet'];
         let buttonHTML = buttons.map(status => {
-            // Default to 'Not Held Yet' if there is no status yet.
             const isActive = (currentStatus || 'Not Held Yet') === status;
             return `<button data-status="${status}" class="${getButtonClass(status, isActive)}">${status}</button>`;
         }).join('');
@@ -522,7 +526,6 @@ const AttendancePopulator = {
                 const dayName = WEEKDAYS[dayIndex - 1];
                 const lecturesForDay = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
                 
-                // FIX: Set correct initial status based on whether the day is in the past or future.
                 const currentDateStr = toYYYYMMDD(currentDate);
                 const status = currentDateStr < todayStr ? 'Missed' : 'Not Held Yet';
 
