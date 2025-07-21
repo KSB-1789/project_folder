@@ -138,9 +138,16 @@ const DataManager = {
         if (!appState.hasPendingChanges()) return;
 
         try {
-            const updates = Array.from(appState.pendingChanges, ([id, status]) => ({ id, status }));
-            const { error } = await supabase.from('attendance_log').upsert(updates);
-            if (error) throw error;
+            const updatePromises = [];
+            for (const [id, status] of appState.pendingChanges) {
+                updatePromises.push(
+                    supabase.from('attendance_log').update({ status }).eq('id', id)
+                );
+            }
+
+            const results = await Promise.all(updatePromises);
+            const firstError = results.find(res => res.error);
+            if (firstError) throw firstError.error;
 
             for (const [id, status] of appState.pendingChanges) {
                 const logIndex = appState.attendanceLog.findIndex(log => String(log.id) === id);
@@ -201,13 +208,11 @@ const AttendanceCalculator = {
         return 1;
     },
 
-    // Helper to get a subject's upcoming schedule to translate lectures into sessions.
     getUpcomingScheduleForSubject(subjectName) {
         const schedule = [];
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Look ahead for a reasonable period (e.g., 180 days)
         for (let i = 0; i < 180; i++) {
             const futureDate = new Date();
             futureDate.setDate(today.getDate() + i);
@@ -235,7 +240,6 @@ const AttendanceCalculator = {
         return schedule;
     },
 
-    // FINAL FIX: Bunking assistant now gives actionable advice in "sessions" instead of "lectures".
     calculateBunkingAdvice(subjectName, totalAttended, totalHeld) {
         const thresholdPercent = appState.userProfile.attendance_threshold;
         const threshold = thresholdPercent / 100;
@@ -258,8 +262,9 @@ const AttendanceCalculator = {
             let sessionsToAttend = 0;
             let theorySessions = 0;
             let labSessions = 0;
-            let hasMixedWeights = false;
+            
             const firstWeight = upcomingSchedule[0].weight;
+            const hasMixedWeights = upcomingSchedule.some(s => s.weight !== firstWeight);
 
             for (const session of upcomingSchedule) {
                 if (lecturesGained >= lecturesNeeded) break;
@@ -267,12 +272,13 @@ const AttendanceCalculator = {
                 sessionsToAttend++;
                 if (session.category === 'Theory') theorySessions++;
                 else labSessions++;
-                if (session.weight !== firstWeight) hasMixedWeights = true;
             }
-
+            
             let message = `Attend next ${sessionsToAttend} sessions to reach ${thresholdPercent}%.`;
             if (hasMixedWeights && labSessions > 0 && theorySessions > 0) {
                 message = `Attend next ${sessionsToAttend} sessions (${labSessions} Lab, ${theorySessions} Theory) to reach ${thresholdPercent}%.`;
+            } else if (sessionsToAttend === 1 && hasMixedWeights) {
+                 message = `Attend next 1 ${labSessions > 0 ? 'Lab' : 'Theory'} session to reach ${thresholdPercent}%.`;
             }
             return { status: 'danger', message };
         }
@@ -284,12 +290,9 @@ const AttendanceCalculator = {
             let lecturesCanMiss = bunksAvailable;
             let sessionsToMiss = 0;
             for (const session of upcomingSchedule) {
-                if (lecturesCanMiss >= session.weight) {
-                    lecturesCanMiss -= session.weight;
-                    sessionsToMiss++;
-                } else {
-                    break;
-                }
+                if (lecturesCanMiss < session.weight) break;
+                lecturesCanMiss -= session.weight;
+                sessionsToMiss++;
             }
             return { status: 'safe', message: `Safe to miss next ${sessionsToMiss} sessions. Your % will stay above ${thresholdPercent}%.` };
         }
