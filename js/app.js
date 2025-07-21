@@ -201,7 +201,42 @@ const AttendanceCalculator = {
         return 1;
     },
 
-    calculateBunkingAdvice(totalAttended, totalHeld) {
+    // Helper to get a subject's upcoming schedule to translate lectures into sessions.
+    getUpcomingScheduleForSubject(subjectName) {
+        const schedule = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Look ahead for a reasonable period (e.g., 180 days)
+        for (let i = 0; i < 180; i++) {
+            const futureDate = new Date();
+            futureDate.setDate(today.getDate() + i);
+
+            const dayIndex = futureDate.getDay();
+            if (dayIndex >= 1 && dayIndex <= 5) {
+                const dayName = WEEKDAYS[dayIndex - 1];
+                const lecturesForDay = appState.userProfile.timetable_json[dayName] || [];
+
+                lecturesForDay.forEach(lectureString => {
+                    const parts = lectureString.split(' ');
+                    const category = parts.pop();
+                    const currentSubjectName = parts.join(' ');
+
+                    if (currentSubjectName === subjectName) {
+                        schedule.push({
+                            date: toYYYYMMDD(futureDate),
+                            category: category,
+                            weight: this.getWeight(currentSubjectName, category)
+                        });
+                    }
+                });
+            }
+        }
+        return schedule;
+    },
+
+    // FINAL FIX: Bunking assistant now gives actionable advice in "sessions" instead of "lectures".
+    calculateBunkingAdvice(subjectName, totalAttended, totalHeld) {
         const thresholdPercent = appState.userProfile.attendance_threshold;
         const threshold = thresholdPercent / 100;
 
@@ -212,14 +247,51 @@ const AttendanceCalculator = {
         const currentPercentage = (totalAttended / totalHeld) * 100;
 
         if (currentPercentage < thresholdPercent) {
-            const lecturesToAttend = Math.ceil((threshold * totalHeld - totalAttended) / (1 - threshold));
-            return { status: 'danger', message: `Attend next ${lecturesToAttend} classes to reach ${thresholdPercent}%.` };
+            const lecturesNeeded = Math.ceil((threshold * totalHeld - totalAttended) / (1 - threshold));
+            const upcomingSchedule = this.getUpcomingScheduleForSubject(subjectName);
+
+            if (upcomingSchedule.length === 0) {
+                return { status: 'danger', message: `Need ${lecturesNeeded} more lectures, but no upcoming classes found.` };
+            }
+
+            let lecturesGained = 0;
+            let sessionsToAttend = 0;
+            let theorySessions = 0;
+            let labSessions = 0;
+            let hasMixedWeights = false;
+            const firstWeight = upcomingSchedule[0].weight;
+
+            for (const session of upcomingSchedule) {
+                if (lecturesGained >= lecturesNeeded) break;
+                lecturesGained += session.weight;
+                sessionsToAttend++;
+                if (session.category === 'Theory') theorySessions++;
+                else labSessions++;
+                if (session.weight !== firstWeight) hasMixedWeights = true;
+            }
+
+            let message = `Attend next ${sessionsToAttend} sessions to reach ${thresholdPercent}%.`;
+            if (hasMixedWeights && labSessions > 0 && theorySessions > 0) {
+                message = `Attend next ${sessionsToAttend} sessions (${labSessions} Lab, ${theorySessions} Theory) to reach ${thresholdPercent}%.`;
+            }
+            return { status: 'danger', message };
         }
         
         const bunksAvailable = Math.floor((totalAttended - threshold * totalHeld) / threshold);
         
         if (bunksAvailable >= 1) {
-            return { status: 'safe', message: `Safe to miss ${bunksAvailable}. Your % will stay above ${thresholdPercent}%.` };
+            const upcomingSchedule = this.getUpcomingScheduleForSubject(subjectName);
+            let lecturesCanMiss = bunksAvailable;
+            let sessionsToMiss = 0;
+            for (const session of upcomingSchedule) {
+                if (lecturesCanMiss >= session.weight) {
+                    lecturesCanMiss -= session.weight;
+                    sessionsToMiss++;
+                } else {
+                    break;
+                }
+            }
+            return { status: 'safe', message: `Safe to miss next ${sessionsToMiss} sessions. Your % will stay above ${thresholdPercent}%.` };
         }
         
         return { status: 'warning', message: `At ${currentPercentage.toFixed(1)}%. Cannot miss any more classes.` };
@@ -299,7 +371,7 @@ const Renderer = {
                     tableHTML += this.renderSubjectRow(subjectName, 'Lab', labData.attended, labData.held, showCombinedRow, !hasTheory);
                 }
                 if (showCombinedRow) {
-                    tableHTML += this.renderCombinedRow(theoryData.attended + labData.attended, theoryData.held + labData.held);
+                    tableHTML += this.renderCombinedRow(subjectName, theoryData.attended + labData.attended, theoryData.held + labData.held);
                 }
             });
         }
@@ -329,7 +401,7 @@ const Renderer = {
         
         let bunkingInfoCell = '';
         if (!showCombined) {
-            const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(attended, held);
+            const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, attended, held);
             const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
             bunkingInfoCell = `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>`;
         }
@@ -347,11 +419,11 @@ const Renderer = {
                 </tr>`;
     },
 
-    renderCombinedRow(totalAttended, totalHeld) {
+    renderCombinedRow(subjectName, totalAttended, totalHeld) {
         const overallPercentage = totalHeld > 0 ? ((totalAttended / totalHeld) * 100).toFixed(1) + '%' : 'N/A';
         const isBelowThreshold = totalHeld > 0 && ((totalAttended / totalHeld) * 100) < appState.userProfile.attendance_threshold;
         
-        const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(totalAttended, totalHeld);
+        const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, totalAttended, totalHeld);
         const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
 
         return `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300">
@@ -501,7 +573,6 @@ const Renderer = {
 // --- Attendance Population Logic ---
 const AttendancePopulator = {
     async populateAttendanceLog() {
-        // FINAL FIX: Populate logs for the next 7 days for better performance.
         const populateUntilDate = new Date();
         populateUntilDate.setDate(populateUntilDate.getDate() + 7);
         const populateUntilDateStr = toYYYYMMDD(populateUntilDate);
