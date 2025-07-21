@@ -70,8 +70,14 @@ const hideLoading = () => {
 };
 
 const toYYYYMMDD = (date) => {
-    return date.toISOString().split('T')[0];
+    // This function correctly handles dates without timezone issues for YYYY-MM-DD formatting.
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 };
+
 
 const getUTCToday = () => {
     const today = new Date();
@@ -197,10 +203,10 @@ const UIManager = {
 
 // --- Business Logic ---
 const AttendanceCalculator = {
-    // FIX: Simplified weighting logic. This should ideally be a user-configurable property per subject.
+    // FIX: Restored correct weighting logic for specific subjects and labs.
     getWeight(subjectName, category) {
         if (category === 'Lab') return 2;
-        // You can add more complex rules here if needed
+        if (subjectName === 'DSA' || subjectName === 'DA') return 2;
         return 1;
     },
 
@@ -222,11 +228,9 @@ const AttendanceCalculator = {
         return { status: 'warning', message: `Risky. At ${appState.userProfile.attendance_threshold}%. Cannot miss.` };
     },
     
-    // REFACTOR: Centralized summary calculation.
     calculateSummary() {
         const summary = {};
         
-        // Initialize summary object for all unique subjects
         (appState.userProfile.unique_subjects || []).forEach(name => {
             summary[name] = {
                 Theory: { attended: 0, held: 0 },
@@ -236,11 +240,10 @@ const AttendanceCalculator = {
 
         for (const log of appState.attendanceLog) {
             const { subject_name, category, status } = log;
-            if (!summary[subject_name]) continue; // Skip logs for subjects no longer in the timetable
+            if (!summary[subject_name] || !summary[subject_name][category]) continue;
 
             const weight = this.getWeight(subject_name, category);
             
-            // FIX: "Held" count is now accurate. A class is held if it was attended or missed.
             if (status === 'Attended' || status === 'Missed') {
                 summary[subject_name][category].held += weight;
             }
@@ -308,7 +311,6 @@ const Renderer = {
         attendanceSummary.innerHTML = tableHTML;
     },
 
-    // QUALITY: Memoize this check for performance.
     _hasCategoryCache: new Map(),
     hasSubjectCategory(subjectName, category) {
         const cacheKey = `${subjectName}-${category}`;
@@ -377,7 +379,8 @@ const Renderer = {
         }
 
         const selectedDate = new Date(dateStr + 'T12:00:00Z');
-        const today = getUTCToday();
+        const today = new Date();
+        today.setHours(0,0,0,0);
         const canEdit = selectedDate <= today;
 
         let logHTML = `<div class="space-y-4">`;
@@ -393,6 +396,7 @@ const Renderer = {
         UIManager.updateSaveButton();
     },
 
+    // FIX: Restored correct button rendering logic.
     renderLectureItem(log, currentStatus, canEdit) {
         const getButtonClass = (btnStatus, isActive) => {
             const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors';
@@ -401,7 +405,7 @@ const Renderer = {
                     'Attended': 'bg-green-500 text-white',
                     'Missed': 'bg-red-500 text-white',
                     'Cancelled': 'bg-yellow-500 text-white',
-                    'Not Held Yet': 'bg-gray-400 text-white'
+                    'Not Held Yet': 'bg-gray-400 text-white cursor-not-allowed'
                 };
                 return `${baseClass} ${activeClasses[btnStatus]}`;
             }
@@ -410,16 +414,18 @@ const Renderer = {
 
         const buttons = ['Attended', 'Missed', 'Cancelled'];
         let buttonHTML = '';
+        
         if (canEdit) {
             buttonHTML = buttons.map(status => `<button data-status="${status}" class="${getButtonClass(status, currentStatus === status)}">${status}</button>`).join('');
         } else {
+            // For future dates, show a disabled "Not Held Yet" button.
             buttonHTML = `<button data-status="Not Held Yet" class="${getButtonClass('Not Held Yet', true)}" disabled>Not Held Yet</button>`;
         }
         
         return `
-            <div class="log-item flex items-center justify-between p-4 bg-white rounded-lg shadow-sm">
+            <div class="log-item flex items-center justify-between p-4 bg-white rounded-lg shadow-sm" data-log-id="${log.id}">
                 <strong class="text-gray-800">${log.subject_name} (${log.category})</strong>
-                <div class="log-actions flex flex-wrap gap-2 justify-end" data-log-id="${log.id}">
+                <div class="log-actions flex flex-wrap gap-2 justify-end">
                     ${buttonHTML}
                 </div>
             </div>`;
@@ -449,7 +455,7 @@ const Renderer = {
             elements.setupSubtitle.textContent = "Modify subjects and classes. Existing attendance data for changed subjects will be preserved.";
             elements.saveTimetableBtn.textContent = "Save Changes";
             elements.startDateInput.value = appState.userProfile.start_date;
-            elements.startDateInput.disabled = true; // Start date should not be changed after initial setup
+            elements.startDateInput.disabled = true;
             elements.minAttendanceInput.value = appState.userProfile.attendance_threshold;
         } else {
             elements.setupTitle.textContent = "Initial Setup";
@@ -493,7 +499,7 @@ const Renderer = {
     },
 
     renderDashboard() {
-        this._hasCategoryCache.clear(); // Clear cache before re-rendering
+        this._hasCategoryCache.clear();
         this.renderSummaryTable();
         
         const todayStr = toYYYYMMDD(new Date());
@@ -511,7 +517,6 @@ const AttendancePopulator = {
         const today = getUTCToday();
         const startDate = new Date(appState.userProfile.start_date + 'T00:00:00Z');
 
-        // Determine the actual start for populating logs
         let populateFromDate = new Date(startDate);
         if (appState.userProfile.last_log_date) {
             const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
@@ -519,15 +524,15 @@ const AttendancePopulator = {
         }
 
         if (populateFromDate > today) {
-            return; // Already up-to-date
+            return;
         }
 
         let entriesToUpsert = [];
         let currentDate = new Date(populateFromDate);
 
         while (currentDate <= today) {
-            const dayIndex = currentDate.getUTCDay(); // 0=Sun, 1=Mon...
-            if (dayIndex >= 1 && dayIndex <= 5) { // Monday to Friday
+            const dayIndex = currentDate.getUTCDay();
+            if (dayIndex >= 1 && dayIndex <= 5) {
                 const dayName = WEEKDAYS[dayIndex - 1];
                 const lecturesForDay = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
                 
@@ -541,7 +546,7 @@ const AttendancePopulator = {
                         date: toYYYYMMDD(currentDate),
                         subject_name,
                         category,
-                        status: 'Missed' // Default for past days
+                        status: 'Missed'
                     });
                 });
             }
@@ -553,7 +558,6 @@ const AttendancePopulator = {
             if (error) throw new Error(`Database error during log population: ${error.message}`);
         }
         
-        // Always update last_log_date to today
         await this.updateLastLogDate(toYYYYMMDD(today));
     },
 
@@ -647,9 +651,8 @@ const EventHandlers = {
             }
 
             await DataManager.saveProfile(newProfileData);
-            appState.userProfile = { ...oldProfile, ...newProfileData }; // Update local state immediately
+            appState.userProfile = { ...oldProfile, ...newProfileData };
 
-            // REFACTOR: No page reload. Just re-calculate and re-render.
             await runFullAttendanceUpdate();
             UIManager.showView('dashboard');
             
@@ -683,8 +686,7 @@ const EventHandlers = {
         return formData.startDate && formData.minAttendance && appState.setupSubjects.length > 0;
     },
 
-    // REFACTOR: Simplified logic to find subjects that were completely removed.
-    findSubjectsToDelete(oldSubjects, newSubjects) {
+    findSubjectsToDelete(oldSubjects = [], newSubjects = []) {
         const oldSet = new Set(oldSubjects);
         const newSet = new Set(newSubjects);
         const toDelete = [];
@@ -696,7 +698,6 @@ const EventHandlers = {
         return toDelete;
     },
     
-    // REFACTOR: Smarter data building to preserve state during edits.
     buildProfileData(formData) {
         const baseData = {
             id: appState.currentUser.id,
@@ -706,7 +707,6 @@ const EventHandlers = {
             attendance_threshold: parseInt(formData.minAttendance),
         };
         
-        // FIX: Only set last_log_date to null on initial setup. Preserve it during edits.
         if (appState.isEditingMode) {
             return { ...baseData, last_log_date: appState.userProfile.last_log_date };
         } else {
@@ -790,12 +790,19 @@ const EventHandlers = {
         if (!button) return;
 
         const newStatus = button.dataset.status;
-        const logId = button.closest('.log-actions').dataset.logId;
+        const logItem = button.closest('.log-item');
+        const logId = logItem.dataset.logId;
 
         appState.pendingChanges.set(logId, newStatus);
         
-        // Re-render just the item for simplicity and accuracy
-        Renderer.renderScheduleForDate(appState.currentViewDate);
+        const allButtons = logItem.querySelectorAll('.log-btn');
+        allButtons.forEach(btn => {
+            btn.className = btn.className.replace(/bg-(green|red|yellow|gray)-500 text-white/, 'bg-gray-200 text-gray-700 hover:bg-gray-300');
+        });
+        
+        button.className = button.className.replace(/bg-gray-200 text-gray-700 hover:bg-gray-300/, `bg-${newStatus === 'Attended' ? 'green' : newStatus === 'Missed' ? 'red' : 'yellow'}-500 text-white`);
+
+        UIManager.updateSaveButton();
     },
 
     async handleSaveChanges() {
@@ -823,7 +830,6 @@ const EventHandlers = {
         Renderer.renderScheduleForDate(e.target.value);
     },
     
-    // Combined logic for extra day handling
     async handleAddExtraDay(e) {
         e.preventDefault();
         try {
@@ -840,6 +846,7 @@ const EventHandlers = {
             const lecturesToAdd = appState.userProfile.timetable_json[weekday] || [];
             if (lecturesToAdd.length === 0) {
                 showCustomConfirm(`No classes are scheduled on a ${weekday}.`);
+                hideLoading();
                 return;
             }
 
@@ -854,7 +861,9 @@ const EventHandlers = {
                 return { user_id: appState.currentUser.id, date: extraDateStr, subject_name, category, status: defaultStatus };
             });
 
-            await AttendancePopulator.insertDailyEntries(newLogEntries);
+            const { error } = await supabase.from('attendance_log').upsert(newLogEntries, { onConflict: 'user_id,date,subject_name,category' });
+            if (error) throw error;
+            
             await DataManager.loadAttendanceLog();
             UIManager.setDatePicker(extraDateStr);
             Renderer.renderDashboard();
@@ -905,7 +914,6 @@ const initializeApp = () => {
         }
     });
 
-    // Event Delegation for dynamic content
     document.body.addEventListener('click', (e) => {
         if (e.target.id === 'save-attendance-btn') EventHandlers.handleSaveChanges();
         else if (e.target.closest('.log-actions')) EventHandlers.handleMarkAttendance(e);
