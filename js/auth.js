@@ -1,8 +1,14 @@
 import { supabase } from './supabaseClient.js';
 
-const { data: { session } } = await supabase.auth.getSession();
-if (session) {
-    window.location.href = '/dashboard.html';
+try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+        console.error('Session check error:', error);
+    } else if (session) {
+        window.location.href = '/dashboard.html';
+    }
+} catch (error) {
+    console.error('Failed to check session:', error);
 }
 
 const loginForm = document.getElementById('login-form');
@@ -30,22 +36,59 @@ showLogin.addEventListener('click', (e) => {
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     authError.textContent = '';
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { authError.textContent = error.message; }
-    else { window.location.href = '/dashboard.html'; }
+    
+    try {
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        
+        if (!email || !password) {
+            authError.textContent = 'Please enter both email and password.';
+            return;
+        }
+        
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) { 
+            authError.textContent = error.message; 
+        } else { 
+            window.location.href = '/dashboard.html'; 
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        authError.textContent = 'An unexpected error occurred. Please try again.';
+    }
 });
 
 signupForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     authError.textContent = '';
-    const email = document.getElementById('signup-email').value;
-    const password = document.getElementById('signup-password').value;
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) { authError.textContent = error.message; }
-    else {
-        await supabase.auth.signInWithPassword({ email, password });
-        window.location.href = '/dashboard.html';
+    
+    try {
+        const email = document.getElementById('signup-email').value;
+        const password = document.getElementById('signup-password').value;
+        
+        if (!email || !password) {
+            authError.textContent = 'Please enter both email and password.';
+            return;
+        }
+        
+        if (password.length < 6) {
+            authError.textContent = 'Password must be at least 6 characters long.';
+            return;
+        }
+        
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) { 
+            authError.textContent = error.message; 
+        } else {
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            if (signInError) {
+                authError.textContent = signInError.message;
+            } else {
+                window.location.href = '/dashboard.html';
+            }
+        }
+    } catch (error) {
+        console.error('Signup error:', error);
+        authError.textContent = 'An unexpected error occurred. Please try again.';
     }
 });
