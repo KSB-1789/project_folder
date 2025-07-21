@@ -1006,7 +1006,7 @@ const initializeApp = () => {
         if (appState.confirmResolve) appState.confirmResolve(true);
         appState.confirmResolve = null;
     });
-6
+
     confirmNoBtn?.addEventListener('click', () => {
         if (customConfirmModal) customConfirmModal.style.display = 'none';
         if (appState.confirmResolve) appState.confirmResolve(false);
