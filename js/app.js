@@ -70,19 +70,11 @@ const hideLoading = () => {
 };
 
 const toYYYYMMDD = (date) => {
-    // This function correctly handles dates without timezone issues for YYYY-MM-DD formatting.
     const d = new Date(date);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-};
-
-
-const getUTCToday = () => {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    return today;
 };
 
 const showCustomConfirm = (message) => {
@@ -203,7 +195,6 @@ const UIManager = {
 
 // --- Business Logic ---
 const AttendanceCalculator = {
-    // FIX: Restored correct weighting logic for specific subjects and labs.
     getWeight(subjectName, category) {
         if (category === 'Lab') return 2;
         if (subjectName === 'DSA' || subjectName === 'DA') return 2;
@@ -378,17 +369,12 @@ const Renderer = {
             return;
         }
 
-        const selectedDate = new Date(dateStr + 'T12:00:00Z');
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const canEdit = selectedDate <= today;
-
         let logHTML = `<div class="space-y-4">`;
         lecturesOnDate
             .sort((a, b) => `${a.subject_name} ${a.category}`.localeCompare(`${b.subject_name} ${b.category}`))
             .forEach(log => {
                 const status = appState.pendingChanges.get(String(log.id)) || log.status;
-                logHTML += this.renderLectureItem(log, status, canEdit);
+                logHTML += this.renderLectureItem(log, status);
             });
         
         logHTML += `</div>`;
@@ -396,8 +382,8 @@ const Renderer = {
         UIManager.updateSaveButton();
     },
 
-    // FIX: Restored correct button rendering logic.
-    renderLectureItem(log, currentStatus, canEdit) {
+    // FIX: Removed restrictive logic. All buttons are now always available.
+    renderLectureItem(log, currentStatus) {
         const getButtonClass = (btnStatus, isActive) => {
             const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors';
             if (isActive) {
@@ -405,22 +391,20 @@ const Renderer = {
                     'Attended': 'bg-green-500 text-white',
                     'Missed': 'bg-red-500 text-white',
                     'Cancelled': 'bg-yellow-500 text-white',
-                    'Not Held Yet': 'bg-gray-400 text-white cursor-not-allowed'
+                    'Not Held Yet': 'bg-gray-400 text-white'
                 };
                 return `${baseClass} ${activeClasses[btnStatus]}`;
             }
             return `${baseClass} bg-gray-200 text-gray-700 hover:bg-gray-300`;
         };
 
-        const buttons = ['Attended', 'Missed', 'Cancelled'];
-        let buttonHTML = '';
-        
-        if (canEdit) {
-            buttonHTML = buttons.map(status => `<button data-status="${status}" class="${getButtonClass(status, currentStatus === status)}">${status}</button>`).join('');
-        } else {
-            // For future dates, show a disabled "Not Held Yet" button.
-            buttonHTML = `<button data-status="Not Held Yet" class="${getButtonClass('Not Held Yet', true)}" disabled>Not Held Yet</button>`;
-        }
+        // All buttons are now available for any date.
+        const buttons = ['Attended', 'Missed', 'Cancelled', 'Not Held Yet'];
+        let buttonHTML = buttons.map(status => {
+            // Default to 'Not Held Yet' if there is no status yet.
+            const isActive = (currentStatus || 'Not Held Yet') === status;
+            return `<button data-status="${status}" class="${getButtonClass(status, isActive)}">${status}</button>`;
+        }).join('');
         
         return `
             <div class="log-item flex items-center justify-between p-4 bg-white rounded-lg shadow-sm" data-log-id="${log.id}">
@@ -514,28 +498,34 @@ const Renderer = {
 // --- Attendance Population Logic ---
 const AttendancePopulator = {
     async populateAttendanceLog() {
-        const today = getUTCToday();
+        const todayStr = toYYYYMMDD(new Date());
         const startDate = new Date(appState.userProfile.start_date + 'T00:00:00Z');
 
-        let populateFromDate = new Date(startDate);
+        let populateFromDate;
         if (appState.userProfile.last_log_date) {
             const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
             populateFromDate = new Date(lastLogDate.setDate(lastLogDate.getDate() + 1));
+        } else {
+            populateFromDate = new Date(startDate);
         }
 
-        if (populateFromDate > today) {
+        if (toYYYYMMDD(populateFromDate) > todayStr) {
             return;
         }
 
         let entriesToUpsert = [];
         let currentDate = new Date(populateFromDate);
-
-        while (currentDate <= today) {
-            const dayIndex = currentDate.getUTCDay();
+        
+        while (toYYYYMMDD(currentDate) <= todayStr) {
+            const dayIndex = currentDate.getDay(); // 0=Sun, 1=Mon...
             if (dayIndex >= 1 && dayIndex <= 5) {
                 const dayName = WEEKDAYS[dayIndex - 1];
                 const lecturesForDay = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
                 
+                // FIX: Set correct initial status based on whether the day is in the past or future.
+                const currentDateStr = toYYYYMMDD(currentDate);
+                const status = currentDateStr < todayStr ? 'Missed' : 'Not Held Yet';
+
                 lecturesForDay.forEach(subjectString => {
                     const parts = subjectString.split(' ');
                     const category = parts.pop();
@@ -543,10 +533,10 @@ const AttendancePopulator = {
                     
                     entriesToUpsert.push({
                         user_id: appState.currentUser.id,
-                        date: toYYYYMMDD(currentDate),
+                        date: currentDateStr,
                         subject_name,
                         category,
-                        status: 'Missed'
+                        status: status
                     });
                 });
             }
@@ -558,7 +548,7 @@ const AttendancePopulator = {
             if (error) throw new Error(`Database error during log population: ${error.message}`);
         }
         
-        await this.updateLastLogDate(toYYYYMMDD(today));
+        await this.updateLastLogDate(todayStr);
     },
 
     async updateLastLogDate(dateStr) {
@@ -797,10 +787,14 @@ const EventHandlers = {
         
         const allButtons = logItem.querySelectorAll('.log-btn');
         allButtons.forEach(btn => {
-            btn.className = btn.className.replace(/bg-(green|red|yellow|gray)-500 text-white/, 'bg-gray-200 text-gray-700 hover:bg-gray-300');
+            const status = btn.dataset.status;
+            const isActive = status === newStatus;
+            btn.className = `log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                isActive 
+                ? {Attended: 'bg-green-500 text-white', Missed: 'bg-red-500 text-white', Cancelled: 'bg-yellow-500 text-white', 'Not Held Yet': 'bg-gray-400 text-white'}[status]
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`;
         });
-        
-        button.className = button.className.replace(/bg-gray-200 text-gray-700 hover:bg-gray-300/, `bg-${newStatus === 'Attended' ? 'green' : newStatus === 'Missed' ? 'red' : 'yellow'}-500 text-white`);
 
         UIManager.updateSaveButton();
     },
@@ -850,9 +844,8 @@ const EventHandlers = {
                 return;
             }
 
-            const today = getUTCToday();
-            const selectedDate = new Date(extraDateStr + 'T00:00:00Z');
-            const defaultStatus = selectedDate < today ? 'Missed' : 'Attended';
+            const todayStr = toYYYYMMDD(new Date());
+            const defaultStatus = extraDateStr < todayStr ? 'Missed' : 'Not Held Yet';
 
             const newLogEntries = lecturesToAdd.map(subjectString => {
                 const parts = subjectString.split(' ');
