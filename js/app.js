@@ -201,10 +201,9 @@ const AttendanceCalculator = {
         return 1;
     },
 
-    // FINAL FIX: Improved Bunking Assistant messages for clarity.
     calculateBunkingAdvice(totalAttended, totalHeld) {
-        const threshold = appState.userProfile.attendance_threshold / 100;
         const thresholdPercent = appState.userProfile.attendance_threshold;
+        const threshold = thresholdPercent / 100;
 
         if (totalHeld === 0) {
             return { status: 'safe', message: 'No classes held yet.' };
@@ -212,7 +211,7 @@ const AttendanceCalculator = {
 
         const currentPercentage = (totalAttended / totalHeld) * 100;
 
-        if (currentPercentage < threshold) {
+        if (currentPercentage < thresholdPercent) {
             const lecturesToAttend = Math.ceil((threshold * totalHeld - totalAttended) / (1 - threshold));
             return { status: 'danger', message: `Attend next ${lecturesToAttend} classes to reach ${thresholdPercent}%.` };
         }
@@ -502,26 +501,29 @@ const Renderer = {
 // --- Attendance Population Logic ---
 const AttendancePopulator = {
     async populateAttendanceLog() {
-        const todayStr = toYYYYMMDD(new Date());
-        const startDate = new Date(appState.userProfile.start_date + 'T00:00:00Z');
+        // FINAL FIX: Populate logs for the next 7 days for better performance.
+        const populateUntilDate = new Date();
+        populateUntilDate.setDate(populateUntilDate.getDate() + 7);
+        const populateUntilDateStr = toYYYYMMDD(populateUntilDate);
 
         let populateFromDate;
         if (appState.userProfile.last_log_date) {
             const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
             populateFromDate = new Date(lastLogDate.setDate(lastLogDate.getDate() + 1));
         } else {
-            populateFromDate = new Date(startDate);
+            populateFromDate = new Date(appState.userProfile.start_date + 'T00:00:00Z');
         }
 
-        if (toYYYYMMDD(populateFromDate) > todayStr) {
+        if (toYYYYMMDD(populateFromDate) > populateUntilDateStr) {
             return;
         }
 
         let entriesToUpsert = [];
         let currentDate = new Date(populateFromDate);
+        const todayStr = toYYYYMMDD(new Date());
         
-        while (toYYYYMMDD(currentDate) <= todayStr) {
-            const dayIndex = currentDate.getDay(); // 0=Sun, 1=Mon...
+        while (toYYYYMMDD(currentDate) <= populateUntilDateStr) {
+            const dayIndex = currentDate.getDay();
             if (dayIndex >= 1 && dayIndex <= 5) {
                 const dayName = WEEKDAYS[dayIndex - 1];
                 const lecturesForDay = [...new Set(appState.userProfile.timetable_json[dayName] || [])];
@@ -551,7 +553,7 @@ const AttendancePopulator = {
             if (error) throw new Error(`Database error during log population: ${error.message}`);
         }
         
-        await this.updateLastLogDate(todayStr);
+        await this.updateLastLogDate(populateUntilDateStr);
     },
 
     async updateLastLogDate(dateStr) {
