@@ -70,9 +70,16 @@
             </div>
             <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
-                <div class="space-y-4">
+                <div class="space-y-6">
                     <div>
-                        <p class="text-sm font-medium text-gray-700">Edit Timetable</p>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">Timetable Management</h3>
+                        <div id="timetables-list" class="space-y-3 mb-4">
+                            <!-- Timetables will be listed here -->
+                        </div>
+                        <button id="add-timetable-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Add New Timetable</button>
+                    </div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Edit Current Timetable</p>
                         <p class="text-xs text-gray-500 mb-2">Safely add/remove classes. Your existing attendance marks will be preserved where possible.</p>
                         <button id="edit-timetable-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Edit Timetable</button>
                     </div>
@@ -116,6 +123,65 @@
                 <button id="confirm-no-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-semibold">Cancel</button>
                 <button id="confirm-yes-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Confirm</button>
             </div>
+        </div>
+    </div>
+
+    <div id="timetable-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center" style="display: none;">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <h2 id="timetable-modal-title" class="text-2xl font-bold mb-6">Add New Timetable</h2>
+            <form id="timetable-form" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="timetable-name" class="block text-sm font-medium text-gray-700">Timetable Name:</label>
+                        <input type="text" id="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700">Start Date:</label>
+                        <input type="date" id="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date:</label>
+                        <input type="date" id="timetable-end-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance Percentage:</label>
+                        <input type="number" id="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                
+                <div class="p-4 border rounded-lg">
+                    <h3 class="font-semibold text-lg mb-2">Step 1: Define Your Subjects</h3>
+                    <div class="flex items-end gap-2 mb-4">
+                        <div class="flex-grow">
+                            <label for="timetable-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label>
+                            <input type="text" id="timetable-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                        </div>
+                        <div>
+                            <label for="timetable-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
+                            <select id="timetable-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                                <option>Theory</option>
+                                <option>Lab</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="timetable-subject-weight" class="block text-sm font-medium text-gray-700">Weight</label>
+                            <input type="number" id="timetable-subject-weight" value="1" min="1" max="5" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                        </div>
+                        <button type="button" id="timetable-add-subject-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button>
+                    </div>
+                    <ul id="timetable-subject-master-list" class="space-y-2"></ul>
+                </div>
+                
+                <div class="p-4 border rounded-lg">
+                    <h3 class="font-semibold text-lg mb-4">Step 2: Build Your Weekly Schedule</h3>
+                    <div id="timetable-grid" class="grid grid-cols-1 md:grid-cols-5 gap-4"></div>
+                </div>
+                
+                <div class="flex justify-end gap-4 pt-4">
+                    <button type="button" id="cancel-timetable-btn" class="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Cancel</button>
+                    <button type="submit" id="save-timetable-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Save Timetable</button>
+                </div>
+            </form>
         </div>
     </div>
 
