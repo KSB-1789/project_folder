@@ -1,15 +1,17 @@
 import { supabase } from './supabaseClient.js';
 
-try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) {
-        console.error('Session check error:', error);
-    } else if (session) {
-        window.location.href = '/dashboard.html';
+(async () => {
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+            console.error('Session check error:', error);
+        } else if (session) {
+            window.location.href = '/dashboard.html';
+        }
+    } catch (error) {
+        console.error('Failed to check session:', error);
     }
-} catch (error) {
-    console.error('Failed to check session:', error);
-}
+})();
 
 const loginForm = document.getElementById('login-form');
 const signupForm = document.getElementById('signup-form');
