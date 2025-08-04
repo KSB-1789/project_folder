@@ -624,7 +624,6 @@ const runFullAttendanceUpdate = async () => {
 const initializeEventListeners = () => {
     logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 
-    // Use event delegation for dynamically created elements
     document.body.addEventListener('click', (e) => {
         // Settings and Timetable List buttons
         const addBtn = e.target.closest('#add-timetable-btn');
@@ -658,7 +657,7 @@ const initializeEventListeners = () => {
         const logActionBtn = e.target.closest('.log-btn');
         if (logActionBtn) {
             const logItem = logActionBtn.closest('.log-item');
-            const logId = logItem.dataset.logId;
+            const logId = parseInt(logItem.dataset.logId);
             const newStatus = logActionBtn.dataset.status;
             appState.pendingChanges.set(logId, newStatus);
             Renderer.renderDailyLog(document.getElementById('historical-date').value);
@@ -712,18 +711,20 @@ const initializeEventListeners = () => {
         }
     });
 
-    document.getElementById('historical-date')?.addEventListener('change', (e) => {
-        if (appState.pendingChanges.size > 0) {
-            showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
-                if(discard) {
-                    appState.pendingChanges.clear();
-                    Renderer.renderDailyLog(e.target.value);
-                } else {
-                    e.target.value = toYYYYMMDD(new Date(appState.currentViewDate));
-                }
-            });
-        } else {
-            Renderer.renderDailyLog(e.target.value);
+    dashboardView.addEventListener('change', (e) => {
+        if (e.target.id === 'historical-date') {
+            if (appState.pendingChanges.size > 0) {
+                showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
+                    if(discard) {
+                        appState.pendingChanges.clear();
+                        Renderer.renderDailyLog(e.target.value);
+                    } else {
+                        e.target.value = toYYYYMMDD(new Date(appState.currentViewDate));
+                    }
+                });
+            } else {
+                Renderer.renderDailyLog(e.target.value);
+            }
         }
     });
 };
