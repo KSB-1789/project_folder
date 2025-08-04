@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 // --- Constants ---
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-// --- DOM Elements (only those that are always present) ---
+// --- DOM Elements (static ones) ---
 const loadingOverlay = document.getElementById('loading-overlay');
 const logoutButton = document.getElementById('logout-button');
 const dashboardView = document.getElementById('dashboard-view');
@@ -395,7 +395,8 @@ const Renderer = {
     renderTimetablesList() {
         const timetables = appState.userProfile?.timetables || [];
         const activeTimetable = appState.getActiveTimetable();
-        timetablesListContainer.innerHTML = timetables.map(tt => {
+        const timetablesListContainerEl = document.getElementById('timetables-list');
+        timetablesListContainerEl.innerHTML = timetables.map(tt => {
             const isActive = activeTimetable && tt.id === activeTimetable.id;
             return `<div class="p-4 bg-gray-50 border rounded-lg flex justify-between items-center">
                 <div>
@@ -625,7 +626,6 @@ const initializeEventListeners = () => {
     logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 
     document.body.addEventListener('click', (e) => {
-        // Settings and Timetable List buttons
         const addBtn = e.target.closest('#add-timetable-btn');
         const editBtn = e.target.closest('.edit-timetable-btn');
         const deleteBtn = e.target.closest('.delete-timetable-btn');
@@ -653,7 +653,6 @@ const initializeEventListeners = () => {
             });
         }
 
-        // Daily Log buttons
         const logActionBtn = e.target.closest('.log-btn');
         if (logActionBtn) {
             const logItem = logActionBtn.closest('.log-item');
@@ -672,9 +671,8 @@ const initializeEventListeners = () => {
 
     timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
     
-    document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', () => {
-        timetableModal.style.display = 'none';
-        extraDayModal.style.display = 'none';
+    document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', (e) => {
+        e.target.closest('.fixed').style.display = 'none';
     }));
 
     timetableModal.addEventListener('click', (e) => {
