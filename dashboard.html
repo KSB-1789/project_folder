@@ -69,11 +69,11 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label for="timetable-name" class="block text-sm font-medium text-gray-700">Timetable Name:</label>
-                        <input type="text" id="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <input type="text" id="timetable-name" name="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
                         <label for="timetable-type" class="block text-sm font-medium text-gray-700">Timetable Type:</label>
-                        <select id="timetable-type" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <select id="timetable-type" name="timetable-type" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                             <option value="normal">Normal</option>
                             <option value="special">Special</option>
                         </select>
@@ -83,16 +83,16 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label for="timetable-start-date" class="block text-sm font-medium text-gray-700">Start Date:</label>
-                        <input type="date" id="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <input type="date" id="timetable-start-date" name="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
                         <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
-                        <input type="date" id="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <input type="date" id="timetable-end-date" name="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                         <p id="end-date-help" class="text-xs text-gray-500 mt-1">Required for special timetables, optional for normal timetables (will use 2030-12-31 if not provided)</p>
                     </div>
                     <div>
                         <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance %:</label>
-                        <input type="number" id="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <input type="number" id="timetable-min-attendance" name="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                 </div>
                 
@@ -101,18 +101,18 @@
                     <div class="flex items-end gap-2 mb-4">
                         <div class="flex-grow">
                             <label for="timetable-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label>
-                            <input type="text" id="timetable-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <input type="text" id="timetable-subject-name" name="timetable-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
                         </div>
                         <div>
                             <label for="timetable-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="timetable-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <select id="timetable-subject-category" name="timetable-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
                                 <option>Theory</option>
                                 <option>Lab</option>
                             </select>
                         </div>
                         <div>
                             <label for="timetable-subject-weight" class="block text-sm font-medium text-gray-700">Weight</label>
-                            <input type="number" id="timetable-subject-weight" value="1" min="1" max="10" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <input type="number" id="timetable-subject-weight" name="timetable-subject-weight" value="1" min="1" max="10" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
                         </div>
                         <button type="button" id="timetable-add-subject-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button>
                     </div>

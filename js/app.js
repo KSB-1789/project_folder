@@ -787,9 +787,33 @@ const TimetableManager = {
         const startDate = formData.get('timetable-start-date');
         const endDate = formData.get('timetable-end-date');
         
+        // Debug logging
+        console.log('Form data debug:', {
+            timetableType,
+            startDate,
+            endDate,
+            name: formData.get('timetable-name'),
+            minAttendance: formData.get('timetable-min-attendance')
+        });
+        
+        // Also log all form data entries
+        console.log('All form data entries:');
+        for (let [key, value] of formData.entries()) {
+            console.log(`${key}: ${value}`);
+        }
+        
         // Start date is always required
         if (!startDate) {
-            return handleError({ message: 'Please provide a start date.' }, 'Save Timetable');
+            console.error('Start date is empty or invalid:', startDate);
+            
+            // Fallback: try to get start date directly from the input element
+            const startDateInput = document.getElementById('timetable-start-date');
+            if (startDateInput && startDateInput.value) {
+                console.log('Found start date in input element:', startDateInput.value);
+                startDate = startDateInput.value;
+            } else {
+                return handleError({ message: 'Please provide a start date.' }, 'Save Timetable');
+            }
         }
         
         // For special timetables, end date is mandatory
