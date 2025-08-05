@@ -4,7 +4,7 @@ import { supabase } from './supabaseClient.js';
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 // --- DOM Elements (will be assigned after DOM is loaded) ---
-let loadingOverlay, logoutButton, dashboardView, timetableModal, timetableForm, extraDayModal, customConfirmModal, confirmModalText, confirmYesBtn, confirmNoBtn;
+let loadingOverlay, logoutButton, dashboardView, timetableModal, timetableForm, extraDayModal, extraDayForm, customConfirmModal, confirmModalText, confirmYesBtn, confirmNoBtn;
 
 // --- Application State ---
 class AppState {
@@ -15,6 +15,7 @@ class AppState {
         this.setupSubjects = []; // Used only inside the timetable modal
         this.pendingChanges = new Map();
         this.editingTimetable = null; // The timetable object being edited
+        this.currentViewDate = new Date();
     }
 
     getActiveTimetable(date = new Date()) {
@@ -63,7 +64,7 @@ const showCustomConfirm = (message) => {
 
 const handleError = (error, context = '') => {
     console.error(`Error in ${context}:`, error);
-    showCustomConfirm(`${context}: ${error.message || 'An unexpected error occurred.'}`);
+    alert(`${context}: ${error.message || 'An unexpected error occurred.'}`);
     hideLoading();
 };
 
@@ -179,7 +180,7 @@ const AttendanceCalculator = {
         const summary = {};
         const allSubjects = new Set();
         (appState.userProfile.timetables || []).forEach(tt => {
-            Object.keys(tt.subjectWeights).forEach(subFullName => {
+            Object.keys(tt.subjectWeights || {}).forEach(subFullName => {
                 const subjectName = subFullName.split(' ').slice(0, -1).join(' ');
                 allSubjects.add(subjectName);
             });
@@ -340,6 +341,7 @@ const Renderer = {
     },
 
     renderDailyLog(dateStr = toYYYYMMDD(new Date())) {
+        appState.currentViewDate = new Date(dateStr);
         document.getElementById('historical-date').value = dateStr;
         const dailyLogContainerEl = document.getElementById('daily-log-container');
         const lecturesOnDate = appState.attendanceLog.filter(log => log.date === dateStr);
@@ -510,7 +512,7 @@ const TimetableManager = {
             document.getElementById('timetable-start-date').value = timetableToEdit.startDate;
             document.getElementById('timetable-end-date').value = timetableToEdit.endDate;
             
-            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights).map(([fullName, weight]) => {
+            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights || {}).map(([fullName, weight]) => {
                 const parts = fullName.split(' ');
                 const category = parts.pop();
                 const name = parts.join(' ');
@@ -567,6 +569,7 @@ const TimetableManager = {
         
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: existingTimetables, attendance_threshold: parseInt(formData.get('timetable-min-attendance')) });
         appState.userProfile.timetables = existingTimetables;
+        appState.userProfile.attendance_threshold = parseInt(formData.get('timetable-min-attendance'));
 
         this.closeModal();
         await runFullAttendanceUpdate();
@@ -578,6 +581,29 @@ const TimetableManager = {
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: updatedTimetables });
         appState.userProfile.timetables = updatedTimetables;
         await runFullAttendanceUpdate();
+    }
+};
+
+// --- Extra Day Management ---
+const ExtraDayManager = {
+    async addExtraDay(date, weekdayToFollow) {
+        const activeTimetable = appState.getActiveTimetable(new Date(date));
+        if (!activeTimetable) {
+            throw new Error('No active timetable for the selected date');
+        }
+
+        const lecturesForDay = [...new Set(activeTimetable.schedule[weekdayToFollow] || [])];
+        const entriesToUpsert = lecturesForDay.map(subjectString => {
+            const parts = subjectString.split(' ');
+            const category = parts.pop();
+            const subject_name = parts.join(' ');
+            return { user_id: appState.currentUser.id, date, subject_name, category, status: 'Not Held Yet' };
+        });
+
+        if (entriesToUpsert.length > 0) {
+            const { error } = await supabase.from('attendance_log').upsert(entriesToUpsert, { onConflict: 'user_id,date,subject_name,category' });
+            if (error) throw error;
+        }
     }
 };
 
@@ -605,8 +631,6 @@ const init = async () => {
         }
     } catch (error) {
         handleError(error, 'Initialization');
-    } finally {
-        hideLoading();
     }
 };
 
@@ -673,6 +697,21 @@ const initializeEventListeners = () => {
     if (timetableForm) {
         timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
     }
+
+    if (extraDayForm) {
+        extraDayForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const date = document.getElementById('extra-day-date').value;
+                const weekday = document.getElementById('weekday-to-follow').value;
+                await ExtraDayManager.addExtraDay(date, weekday);
+                extraDayModal.style.display = 'none';
+                await runFullAttendanceUpdate();
+            } catch (error) {
+                handleError(error, 'Add Extra Day');
+            }
+        });
+    }
     
     document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', (e) => {
         const modal = e.target.closest('.fixed');
@@ -724,7 +763,7 @@ const initializeEventListeners = () => {
                             appState.pendingChanges.clear();
                             Renderer.renderDailyLog(e.target.value);
                         } else {
-                            e.target.value = toYYYYMMDD(new Date(appState.currentViewDate));
+                            e.target.value = toYYYYMMDD(appState.currentViewDate);
                         }
                     });
                 } else {
@@ -744,6 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
     timetableModal = document.getElementById('timetable-modal');
     timetableForm = document.getElementById('timetable-form');
     extraDayModal = document.getElementById('extra-day-modal');
+    extraDayForm = document.getElementById('extra-day-form');
     customConfirmModal = document.getElementById('custom-confirm-modal');
     confirmModalText = document.getElementById('confirm-modal-text');
     confirmYesBtn = document.getElementById('confirm-yes-btn');
