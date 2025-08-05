@@ -69,9 +69,20 @@ const hideLoading = () => {
 };
 
 const toYYYYMMDD = (date) => {
-    const d = new Date(date);
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); // Adjust for timezone
-    return d.toISOString().split('T')[0];
+    if (!date) return null;
+    
+    try {
+        const d = new Date(date);
+        if (isNaN(d.getTime())) {
+            console.warn('Invalid date provided to toYYYYMMDD:', date);
+            return null;
+        }
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); // Adjust for timezone
+        return d.toISOString().split('T')[0];
+    } catch (error) {
+        console.error('Error in toYYYYMMDD:', error, 'Input:', date);
+        return null;
+    }
 };
 
 const showCustomConfirm = (message) => {
@@ -102,14 +113,23 @@ const handleError = (error, context = '') => {
 // --- Data Management ---
 const DataManager = {
     async fetchUserProfile() {
-        const { data, error } = await supabase.from('profiles').select('*').eq('id', appState.currentUser.id).single();
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', appState.currentUser.id)
+            .single();
         if (error && error.code !== 'PGRST116') throw error;
         return data;
     },
 
     async saveUserProfile(profileData) {
-        const { error } = await supabase.from('profiles').upsert(profileData);
-        if (error) throw error;
+        try {
+            const { error } = await supabase.from('profiles').upsert(profileData);
+            if (error) throw error;
+        } catch (error) {
+            console.error('Error saving user profile:', error);
+            throw error;
+        }
     },
 
     async updateAttendancePauseStatus(paused) {
@@ -579,21 +599,43 @@ const AttendancePopulator = {
 
         let populateFromDate;
         if (appState.userProfile.last_log_date) {
-            const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
-            populateFromDate = new Date(lastLogDate.setDate(lastLogDate.getDate() + 1));
+            try {
+                const lastLogDate = new Date(appState.userProfile.last_log_date + 'T00:00:00Z');
+                if (!isNaN(lastLogDate.getTime())) {
+                    populateFromDate = new Date(lastLogDate.setDate(lastLogDate.getDate() + 1));
+                } else {
+                    populateFromDate = new Date();
+                }
+            } catch (error) {
+                console.warn('Invalid last_log_date, using current date:', appState.userProfile.last_log_date);
+                populateFromDate = new Date();
+            }
         } else {
-            const earliestStartDate = timetables.reduce((earliest, tt) => tt.startDate < earliest ? tt.startDate : earliest, timetables[0].startDate);
-            populateFromDate = new Date(earliestStartDate + 'T00:00:00Z');
+            try {
+                const earliestStartDate = timetables.reduce((earliest, tt) => {
+                    const ttDate = new Date(tt.startDate);
+                    const earliestDate = new Date(earliest);
+                    return !isNaN(ttDate.getTime()) && ttDate < earliestDate ? tt.startDate : earliest;
+                }, timetables[0].startDate);
+                populateFromDate = new Date(earliestStartDate + 'T00:00:00Z');
+            } catch (error) {
+                console.warn('Error calculating earliest start date, using current date');
+                populateFromDate = new Date();
+            }
         }
 
-        if (toYYYYMMDD(populateFromDate) > populateUntilDateStr) return;
+        const populateFromDateStr = toYYYYMMDD(populateFromDate);
+        if (!populateFromDateStr || populateFromDateStr > populateUntilDateStr) return;
 
         let entriesToUpsert = [];
         let currentDate = new Date(populateFromDate);
         const todayStr = toYYYYMMDD(new Date());
         const isPaused = appState.isAttendancePaused();
         
-        while (toYYYYMMDD(currentDate) <= populateUntilDateStr) {
+        while (true) {
+            const currentDateStr = toYYYYMMDD(currentDate);
+            if (!currentDateStr || currentDateStr > populateUntilDateStr) break;
+            
             const dayIndex = currentDate.getDay();
             if (dayIndex >= 1 && dayIndex <= 5) {
                 const dayName = WEEKDAYS[dayIndex - 1];
@@ -601,7 +643,6 @@ const AttendancePopulator = {
                 
                 if (activeTimetable) {
                     const lecturesForDay = [...new Set(activeTimetable.schedule[dayName] || [])];
-                    const currentDateStr = toYYYYMMDD(currentDate);
                     const status = currentDateStr < todayStr ? 'Missed' : 'Not Held Yet';
 
                     lecturesForDay.forEach(subjectString => {
@@ -789,8 +830,16 @@ const init = async () => {
         appState.userProfile = await DataManager.fetchUserProfile();
         
         if (appState.userProfile && appState.userProfile.timetables && appState.userProfile.timetables.length > 0) {
-            await runFullAttendanceUpdate();
-            dashboardView.style.display = 'block';
+            try {
+                await runFullAttendanceUpdate();
+                dashboardView.style.display = 'block';
+            } catch (error) {
+                console.error('Error during attendance update:', error);
+                hideLoading();
+                // If there's an error, still show the dashboard but with empty state
+                dashboardView.style.display = 'block';
+                Renderer.renderDashboard();
+            }
         } else {
             hideLoading();
             if (!appState.userProfile) {
@@ -800,11 +849,17 @@ const init = async () => {
                     attendance_threshold: 75,
                     attendance_paused: false
                 };
-            } else if (!appState.userProfile.attendance_threshold) {
-                appState.userProfile.attendance_threshold = 75;
-            }
-            if (!appState.userProfile.attendance_paused) {
-                appState.userProfile.attendance_paused = false;
+            } else {
+                // Ensure all required fields exist
+                if (!appState.userProfile.attendance_threshold) {
+                    appState.userProfile.attendance_threshold = 75;
+                }
+                if (appState.userProfile.attendance_paused === undefined) {
+                    appState.userProfile.attendance_paused = false;
+                }
+                if (!appState.userProfile.timetables) {
+                    appState.userProfile.timetables = [];
+                }
             }
             TimetableManager.openModal();
         }
