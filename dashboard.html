@@ -86,8 +86,9 @@
                         <input type="date" id="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
-                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date:</label>
-                        <input type="date" id="timetable-end-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
+                        <input type="date" id="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <p id="end-date-help" class="text-xs text-gray-500 mt-1">Required for special timetables, optional for normal timetables (will use 2030-12-31 if not provided)</p>
                     </div>
                     <div>
                         <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance %:</label>

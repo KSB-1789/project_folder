@@ -54,7 +54,7 @@ class AppState {
     }
 
     isAttendancePaused() {
-        return this.userProfile?.attendancePaused || false;
+        return this.userProfile?.attendance_paused || false;
     }
 }
 const appState = new AppState();
@@ -135,9 +135,9 @@ const DataManager = {
     },
 
     async updateAttendancePauseStatus(paused) {
-        const { error } = await supabase.from('profiles').update({ attendancePaused: paused }).eq('id', appState.currentUser.id);
+        const { error } = await supabase.from('profiles').update({ attendance_paused: paused }).eq('id', appState.currentUser.id);
         if (error) throw error;
-        appState.userProfile.attendancePaused = paused;
+        appState.userProfile.attendance_paused = paused;
     },
 
     async loadAttendanceLog() {
@@ -558,7 +558,7 @@ const Renderer = {
             
             const activeBadge = isActive 
                 ? '<span class="text-xs font-medium text-green-800 bg-green-100 px-2 py-1 rounded-full ml-1">Active</span>' 
-                : '';
+                : '<span class="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded-full ml-1">Inactive</span>';
             
             const specialControls = timetableType === 'special' 
                 ? `<button data-id="${tt.id}" class="toggle-special-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
@@ -754,7 +754,24 @@ const TimetableManager = {
         }
 
         Renderer.renderTimetableModalUI();
+        this.updateEndDateRequirements(timetableType);
         if (timetableModal) timetableModal.style.display = 'flex';
+    },
+
+    updateEndDateRequirements(timetableType) {
+        const endDateRequired = document.getElementById('end-date-required');
+        const endDateHelp = document.getElementById('end-date-help');
+        const endDateField = document.getElementById('timetable-end-date');
+        
+        if (timetableType === 'special') {
+            if (endDateRequired) endDateRequired.style.display = 'inline';
+            if (endDateField) endDateField.required = true;
+            if (endDateHelp) endDateHelp.textContent = 'Required for special timetables';
+        } else {
+            if (endDateRequired) endDateRequired.style.display = 'none';
+            if (endDateField) endDateField.required = false;
+            if (endDateHelp) endDateHelp.textContent = 'Optional for normal timetables (will use 2030-12-31 if not provided)';
+        }
     },
 
     closeModal() {
@@ -766,16 +783,23 @@ const TimetableManager = {
         const formData = new FormData(timetableForm);
         const timetableType = formData.get('timetable-type') || 'normal';
         
-        // Validate dates
+        // Validate dates based on timetable type
         const startDate = formData.get('timetable-start-date');
         const endDate = formData.get('timetable-end-date');
         
-        if (!startDate || !endDate) {
-            return handleError({ message: 'Please provide both start and end dates.' }, 'Save Timetable');
+        // Start date is always required
+        if (!startDate) {
+            return handleError({ message: 'Please provide a start date.' }, 'Save Timetable');
         }
         
-        if (startDate > endDate) {
-            return handleError({ message: 'Start date cannot be after end date.' }, 'Save Timetable');
+        // For special timetables, end date is mandatory
+        if (timetableType === 'special' && !endDate) {
+            return handleError({ message: 'Special timetables require an end date.' }, 'Save Timetable');
+        }
+        
+        // If end date is provided, validate it's after start date
+        if (endDate && startDate > endDate) {
+            return handleError({ message: 'End date cannot be before start date.' }, 'Save Timetable');
         }
         
         const newTimetableData = {
@@ -783,7 +807,7 @@ const TimetableManager = {
             name: formData.get('timetable-name'),
             type: timetableType,
             startDate: startDate,
-            endDate: endDate,
+            endDate: timetableType === 'special' ? endDate : (endDate || '2030-12-31'), // Far future date for normal timetables if no end date
             schedule: {},
             subjectWeights: {},
             isActive: timetableType === 'special' ? false : true // Special timetables start inactive
@@ -794,12 +818,14 @@ const TimetableManager = {
             const otherNormalTimetables = (appState.userProfile.timetables || []).filter(tt => 
                 tt.id !== newTimetableData.id && (tt.type === 'normal' || tt.type === undefined)
             );
-            const isOverlapping = otherNormalTimetables.some(tt => 
-                newTimetableData.startDate <= tt.endDate && newTimetableData.endDate >= tt.startDate
-            );
+            const isOverlapping = otherNormalTimetables.some(tt => {
+                const ttEndDate = tt.endDate || '2030-12-31';
+                const newEndDate = newTimetableData.endDate || '2030-12-31';
+                return newTimetableData.startDate <= ttEndDate && newEndDate >= tt.startDate;
+            });
 
             if (isOverlapping) {
-                const confirmMessage = `This normal timetable overlaps with existing normal timetables. Do you want to continue? This will allow multiple normal timetables to be active simultaneously.`;
+                const confirmMessage = `This normal timetable overlaps with existing normal timetables. You can manually pause/activate timetables as needed. Continue?`;
                 const shouldContinue = await showCustomConfirm(confirmMessage);
                 if (!shouldContinue) {
                     return;
@@ -841,9 +867,102 @@ const TimetableManager = {
         const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
         if (!timetable || (timetable.type !== 'special' && timetable.type !== undefined)) return;
         
-        timetable.isActive = !timetable.isActive;
+        const wasActive = timetable.isActive;
+        timetable.isActive = !wasActive;
+        
+        // If activating a special timetable, automatically pause normal timetables
+        if (timetable.isActive && !wasActive) {
+            // Pause all normal timetables that overlap with this special timetable
+            const overlappingNormalTimetables = appState.userProfile.timetables.filter(tt => 
+                (tt.type === 'normal' || tt.type === undefined) && 
+                tt.id !== timetableId &&
+                tt.isActive &&
+                this.doDatesOverlap(timetable.startDate, timetable.endDate, tt.startDate, tt.endDate)
+            );
+            
+            if (overlappingNormalTimetables.length > 0) {
+                overlappingNormalTimetables.forEach(tt => {
+                    tt.isActive = false;
+                });
+                
+                // Also pause attendance counting for normal timetables
+                appState.userProfile.attendance_paused = true;
+                
+                console.log(`Automatically paused ${overlappingNormalTimetables.length} normal timetables due to special timetable activation`);
+                
+                // Show notification to user
+                this.showNotification(`Special timetable activated! Automatically paused ${overlappingNormalTimetables.length} overlapping normal timetables.`, 'info');
+            }
+        }
+        
+        // If deactivating a special timetable, check if we should resume normal timetables
+        if (!timetable.isActive && wasActive) {
+            // Check if there are any other active special timetables
+            const otherActiveSpecialTimetables = appState.userProfile.timetables.filter(tt => 
+                (tt.type === 'special' || tt.type === undefined) && 
+                tt.id !== timetableId &&
+                tt.isActive
+            );
+            
+            // If no other special timetables are active, resume normal timetables
+            if (otherActiveSpecialTimetables.length === 0) {
+                appState.userProfile.attendance_paused = false;
+                console.log('No active special timetables remaining, resuming normal timetable attendance');
+                
+                // Show notification to user
+                this.showNotification('Special timetable deactivated! Normal timetable attendance resumed.', 'success');
+            }
+        }
+        
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: appState.userProfile.timetables });
         await runFullAttendanceUpdate();
+    },
+
+    doDatesOverlap(start1, end1, start2, end2) {
+        const s1 = start1 || '1900-01-01';
+        const e1 = end1 || '2030-12-31';
+        const s2 = start2 || '1900-01-01';
+        const e2 = end2 || '2030-12-31';
+        
+        return s1 <= e2 && e1 >= s2;
+    },
+
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm transition-all duration-300 transform translate-x-full`;
+        
+        // Set background color based on type
+        const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+        notification.className += ` ${bgColor} text-white`;
+        
+        notification.innerHTML = `
+            <div class="flex items-center justify-between">
+                <p class="text-sm font-medium">${message}</p>
+                <button class="ml-4 text-white hover:text-gray-200" onclick="this.parentElement.parentElement.remove()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
+        setTimeout(() => {
+            notification.classList.remove('translate-x-full');
+        }, 100);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            notification.classList.add('translate-x-full');
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 300);
+        }, 5000);
     },
 
     async toggleNormalTimetable(timetableId) {
@@ -1020,6 +1139,14 @@ const initializeEventListeners = () => {
 
     if (timetableForm) {
         timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
+        
+        // Add event listener for timetable type change
+        const typeField = document.getElementById('timetable-type');
+        if (typeField) {
+            typeField.addEventListener('change', (e) => {
+                TimetableManager.updateEndDateRequirements(e.target.value);
+            });
+        }
     }
 
     if (extraDayForm) {
