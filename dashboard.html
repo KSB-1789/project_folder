@@ -66,7 +66,7 @@
         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <h2 id="timetable-modal-title" class="text-2xl font-bold mb-6">Add New Timetable</h2>
             <form id="timetable-form" class="space-y-6">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label for="timetable-name" class="block text-sm font-medium text-gray-700">Timetable Name:</label>
                         <input type="text" id="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
@@ -77,6 +77,17 @@
                             <option value="normal">Normal</option>
                             <option value="special">Special</option>
                         </select>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700">Start Date:</label>
+                        <input type="date" id="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date:</label>
+                        <input type="date" id="timetable-end-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                     </div>
                     <div>
                         <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance %:</label>

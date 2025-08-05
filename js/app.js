@@ -267,18 +267,27 @@ const AttendanceCalculator = {
         for (const log of appState.attendanceLog) {
             const { date, subject_name, category, status } = log;
             
-            // Skip if attendance is paused and this is a normal timetable entry
-            if (appState.isAttendancePaused()) {
-                const timetablesForDate = appState.getTimetableForDate(new Date(date));
-                const hasSpecialTimetable = timetablesForDate.some(tt => (tt.type === 'special' || tt.type === undefined) && (tt.isActive === true || tt.isActive === undefined));
-                if (!hasSpecialTimetable) continue;
-            }
-            
+            // Always count held classes (for consistent dashboard display)
             const weight = this.getWeight(`${subject_name} ${category}`, new Date(date));
             if (!summary[subject_name]) continue;
 
-            if (status === 'Attended' || status === 'Missed') summary[subject_name][category].held += weight;
-            if (status === 'Attended') summary[subject_name][category].attended += weight;
+            if (status === 'Attended' || status === 'Missed') {
+                summary[subject_name][category].held += weight;
+            }
+            
+            // Only count attended classes based on pause status
+            if (status === 'Attended') {
+                if (appState.isAttendancePaused()) {
+                    // When paused, only count attendance from special timetables
+                    const activeTimetable = appState.getActiveTimetable(new Date(date));
+                    if (activeTimetable && activeTimetable.type === 'special') {
+                        summary[subject_name][category].attended += weight;
+                    }
+                } else {
+                    // When not paused, count all attendance
+                    summary[subject_name][category].attended += weight;
+                }
+            }
         }
         return summary;
     }
@@ -308,11 +317,11 @@ const Renderer = {
                         <h3 class="text-lg font-semibold text-gray-800 mb-3">Attendance Control</h3>
                         <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                             <div>
-                                <p class="text-sm font-medium text-gray-700">Attendance Tracking</p>
-                                <p class="text-xs text-gray-500">Pause normal attendance counting during special periods</p>
+                                <p class="text-sm font-medium text-gray-700">Normal Timetable Attendance</p>
+                                <p class="text-xs text-gray-500">Pause normal timetable counting (special timetables continue)</p>
                             </div>
                             <button id="toggle-attendance-btn" class="px-4 py-2 rounded-lg font-semibold transition-colors">
-                                ${appState.isAttendancePaused() ? 'Resume' : 'Pause'}
+                                ${appState.isAttendancePaused() ? 'Resume Normal' : 'Pause Normal'}
                             </button>
                         </div>
                     </div>
@@ -332,12 +341,19 @@ const Renderer = {
                 </div>
             </div>`;
 
+        const attendanceSummary = document.getElementById('attendance-summary');
+        const dailyLogContainer = document.getElementById('daily-log-container');
+        
         if (!appState.getActiveTimetable()) {
-            document.getElementById('attendance-summary').innerHTML = `<div class="text-center p-8">
-                <h2 class="text-2xl font-bold mb-4 text-gray-800">No Active Timetable</h2>
-                <p class="text-gray-600">You don't have a timetable set for today's date. Please create or adjust one in the settings below.</p>
-            </div>`;
-            document.getElementById('daily-log-container').innerHTML = '';
+            if (attendanceSummary) {
+                attendanceSummary.innerHTML = `<div class="text-center p-8">
+                    <h2 class="text-2xl font-bold mb-4 text-gray-800">No Active Timetable</h2>
+                    <p class="text-gray-600">You don't have a timetable set for today's date. Please create or adjust one in the settings below.</p>
+                </div>`;
+            }
+            if (dailyLogContainer) {
+                dailyLogContainer.innerHTML = '';
+            }
         } else {
             const activeTimetable = appState.getActiveTimetable();
             const statusIndicator = document.createElement('div');
@@ -349,7 +365,7 @@ const Renderer = {
                     <div class="flex items-center">
                         <span class="text-purple-800 font-semibold">Special Timetable Active:</span>
                         <span class="ml-2 text-purple-600">${activeTimetable.name}</span>
-                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Normal Attendance Paused</span>' : ''}
+                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Normal Timetables Paused</span>' : ''}
                     </div>
                 `;
             } else {
@@ -358,12 +374,15 @@ const Renderer = {
                     <div class="flex items-center">
                         <span class="text-blue-800 font-semibold">Normal Timetable Active:</span>
                         <span class="ml-2 text-blue-600">${activeTimetable.name}</span>
+                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">Attendance Paused</span>' : ''}
                     </div>
                 `;
             }
             
             const summaryContainer = document.getElementById('attendance-summary');
-            summaryContainer.insertBefore(statusIndicator, summaryContainer.firstChild);
+            if (summaryContainer) {
+                summaryContainer.insertBefore(statusIndicator, summaryContainer.firstChild);
+            }
             
             this.renderSummaryTable();
             this.renderDailyLog();
@@ -465,7 +484,10 @@ const Renderer = {
 
     renderDailyLog(dateStr = toYYYYMMDD(new Date())) {
         appState.currentViewDate = new Date(dateStr);
-        document.getElementById('historical-date').value = dateStr;
+        const historicalDateInput = document.getElementById('historical-date');
+        if (historicalDateInput) {
+            historicalDateInput.value = dateStr;
+        }
         const dailyLogContainerEl = document.getElementById('daily-log-container');
         const lecturesOnDate = appState.attendanceLog.filter(log => log.date === dateStr);
         
@@ -685,16 +707,28 @@ const TimetableManager = {
         appState.editingTimetable = timetableToEdit ? { ...timetableToEdit, isDuplicate } : null;
         const title = document.getElementById('timetable-modal-title');
         
+        if (!timetableForm) {
+            console.error('Timetable form not found');
+            return;
+        }
+        
         timetableForm.reset();
         appState.setupSubjects = [];
 
         if (timetableToEdit) {
             title.textContent = isDuplicate ? 'Duplicate Timetable' : 'Edit Timetable';
-            document.getElementById('timetable-name').value = isDuplicate ? `${timetableToEdit.name} (Copy)` : timetableToEdit.name;
-            document.getElementById('timetable-min-attendance').value = appState.userProfile.attendance_threshold;
-            document.getElementById('timetable-start-date').value = timetableToEdit.startDate;
-            document.getElementById('timetable-end-date').value = timetableToEdit.endDate;
-            document.getElementById('timetable-type').value = timetableToEdit.type || 'normal';
+            
+            const nameField = document.getElementById('timetable-name');
+            const minAttendanceField = document.getElementById('timetable-min-attendance');
+            const startDateField = document.getElementById('timetable-start-date');
+            const endDateField = document.getElementById('timetable-end-date');
+            const typeField = document.getElementById('timetable-type');
+            
+            if (nameField) nameField.value = isDuplicate ? `${timetableToEdit.name} (Copy)` : timetableToEdit.name;
+            if (minAttendanceField) minAttendanceField.value = appState.userProfile.attendance_threshold;
+            if (startDateField) startDateField.value = timetableToEdit.startDate;
+            if (endDateField) endDateField.value = timetableToEdit.endDate;
+            if (typeField) typeField.value = timetableToEdit.type || 'normal';
             
             appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights || {}).map(([fullName, weight]) => {
                 const parts = fullName.split(' ');
@@ -704,12 +738,16 @@ const TimetableManager = {
             });
         } else {
             title.textContent = `Add New ${timetableType === 'special' ? 'Special' : 'Normal'} Timetable`;
-            document.getElementById('timetable-min-attendance').value = appState.userProfile?.attendance_threshold || 75;
-            document.getElementById('timetable-type').value = timetableType;
+            
+            const minAttendanceField = document.getElementById('timetable-min-attendance');
+            const typeField = document.getElementById('timetable-type');
+            
+            if (minAttendanceField) minAttendanceField.value = appState.userProfile?.attendance_threshold || 75;
+            if (typeField) typeField.value = timetableType;
         }
 
         Renderer.renderTimetableModalUI();
-        timetableModal.style.display = 'flex';
+        if (timetableModal) timetableModal.style.display = 'flex';
     },
 
     closeModal() {
@@ -861,7 +899,15 @@ const init = async () => {
                     appState.userProfile.timetables = [];
                 }
             }
-            TimetableManager.openModal();
+            
+            // Show dashboard first, then open modal
+            dashboardView.style.display = 'block';
+            Renderer.renderDashboard();
+            
+            // Small delay to ensure DOM is ready
+            setTimeout(() => {
+                TimetableManager.openModal();
+            }, 100);
         }
     } catch (error) {
         handleError(error, 'Initialization');
