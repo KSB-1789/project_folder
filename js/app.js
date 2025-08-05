@@ -348,9 +348,18 @@ const Renderer = {
         
         if (!appState.getActiveTimetable()) {
             if (attendanceSummary) {
-                attendanceSummary.innerHTML = `<div class="text-center p-8">
-                    <h2 class="text-2xl font-bold mb-4 text-gray-800">No Active Timetable</h2>
-                    <p class="text-gray-600">You don't have a timetable set for today's date. Please create or adjust one in the settings below.</p>
+                attendanceSummary.innerHTML = `<div class="text-center p-12">
+                    <div class="flex flex-col items-center space-y-4">
+                        <div class="w-20 h-20 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-3xl flex items-center justify-center shadow-apple dark:shadow-apple-dark">
+                            <svg class="w-10 h-10 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                        </div>
+                        <div class="text-center">
+                            <h2 class="text-2xl font-bold mb-2 bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">No Active Timetable</h2>
+                            <p class="text-gray-600 dark:text-gray-400 max-w-md">Create your first timetable with subjects and schedule to start tracking attendance</p>
+                        </div>
+                    </div>
                 </div>`;
             }
             if (dailyLogContainer) {
@@ -362,21 +371,21 @@ const Renderer = {
             statusIndicator.className = 'mb-4 p-3 rounded-lg border-l-4';
             
             if (activeTimetable.type === 'special') {
-                statusIndicator.className += ' bg-purple-50 border-purple-400';
+                statusIndicator.className += ' bg-purple-50/80 dark:bg-purple-900/20 border-purple-400 dark:border-purple-600 backdrop-blur-sm';
                 statusIndicator.innerHTML = `
                     <div class="flex items-center">
-                        <span class="text-purple-800 font-semibold">Special Timetable Active:</span>
-                        <span class="ml-2 text-purple-600">${activeTimetable.name}</span>
-                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Normal Timetables Paused</span>' : ''}
+                        <span class="text-purple-800 dark:text-purple-300 font-semibold">Special Timetable Active:</span>
+                        <span class="ml-2 text-purple-600 dark:text-purple-400">${activeTimetable.name}</span>
+                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300 px-2 py-1 rounded-full">Normal Timetables Paused</span>' : ''}
                     </div>
                 `;
             } else {
-                statusIndicator.className += ' bg-blue-50 border-blue-400';
+                statusIndicator.className += ' bg-blue-50/80 dark:bg-blue-900/20 border-blue-400 dark:border-blue-600 backdrop-blur-sm';
                 statusIndicator.innerHTML = `
                     <div class="flex items-center">
-                        <span class="text-blue-800 font-semibold">Normal Timetable Active:</span>
-                        <span class="ml-2 text-blue-600">${activeTimetable.name}</span>
-                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">Attendance Paused</span>' : ''}
+                        <span class="text-blue-800 dark:text-blue-300 font-semibold">Normal Timetable Active:</span>
+                        <span class="ml-2 text-blue-600 dark:text-blue-400">${activeTimetable.name}</span>
+                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-2 py-1 rounded-full">Attendance Paused</span>' : ''}
                     </div>
                 `;
             }
@@ -398,23 +407,35 @@ const Renderer = {
         const attendanceSummaryEl = document.getElementById('attendance-summary');
         
         let tableHTML = `
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Overall Summary</h3>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 border border-gray-200">
-                    <thead class="bg-gray-50">
+            <h3 class="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-6">Overall Summary</h3>
+            <div class="overflow-x-auto rounded-2xl border border-gray-200/50 dark:border-apple-gray-800/50 shadow-apple dark:shadow-apple-dark">
+                <table class="min-w-full divide-y divide-gray-200/50 dark:divide-apple-gray-800/50">
+                    <thead class="bg-gray-50/80 dark:bg-apple-gray-850/80 backdrop-blur-sm">
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Attended</th>
-                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Held</th>
-                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Percentage</th>
-                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bunking Assistant</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Subject</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Category</th>
+                            <th class="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Attended</th>
+                            <th class="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Held</th>
+                            <th class="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Percentage</th>
+                            <th class="px-6 py-4 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Bunking Assistant</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-x divide-gray-200">`;
+                    <tbody class="bg-white/80 dark:bg-apple-gray-900/80 backdrop-blur-sm divide-y divide-gray-200/50 dark:divide-apple-gray-800/50">`;
 
         if (subjects.length === 0) {
-            tableHTML += `<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">No subjects defined.</td></tr>`;
+            tableHTML += `<tr><td colspan="6" class="px-6 py-8 text-center">
+                <div class="flex flex-col items-center space-y-3">
+                    <div class="w-16 h-16 bg-gray-100 dark:bg-apple-gray-800 rounded-2xl flex items-center justify-center">
+                        <svg class="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                        </svg>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-gray-700 dark:text-gray-300 font-medium mb-1">No subjects found</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Create a timetable with subjects to see your attendance summary</p>
+                    </div>
+                </div>
+            </td></tr>`;
         } else {
             subjects.forEach(subjectName => {
                 const subjectSummary = summaryData[subjectName];
@@ -451,19 +472,21 @@ const Renderer = {
         let bunkingInfoCell = '';
         if (!showCombined) {
             const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, attended, held);
-            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-            bunkingInfoCell = `<td class="px-6 py-4 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>`;
+            const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300' : 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300';
+            bunkingInfoCell = `<td class="px-6 py-4 text-sm text-center"><div class="p-3 rounded-xl ${statusColorClass} inline-block min-w-[180px] font-medium shadow-sm backdrop-blur-sm">${bunkingInfo.message}</div></td>`;
+        } else {
+            bunkingInfoCell = `<td class="px-6 py-4 text-sm text-center"></td>`;
         }
         
         const rowspan = showCombined ? 3 : 1;
-        const subjectCell = isFirstRow ? `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-left" rowspan="${rowspan}">${subjectName}</td>` : '';
+        const subjectCell = isFirstRow ? `<td class="px-6 py-4 whitespace-nowrap font-semibold text-gray-900 dark:text-white text-left" rowspan="${rowspan}">${subjectName}</td>` : '';
         
-        return `<tr class="${isBelowThreshold ? 'bg-red-50' : ''}">
+        return `<tr class="${isBelowThreshold ? 'bg-red-50/80 dark:bg-red-900/20' : 'hover:bg-gray-50/50 dark:hover:bg-apple-gray-850/50'} transition-colors duration-200">
                     ${subjectCell}
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-left">${category}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${attended}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-gray-500 text-center">${held}</td>
-                    <td class="px-6 py-4 whitespace-nowrap font-medium text-center ${isBelowThreshold ? 'text-red-600' : 'text-gray-900'}">${percentage}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 text-left font-medium">${category}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 text-center font-medium">${attended}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 text-center font-medium">${held}</td>
+                    <td class="px-6 py-4 whitespace-nowrap font-semibold text-center ${isBelowThreshold ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}">${percentage}</td>
                     ${bunkingInfoCell}
                 </tr>`;
     },
@@ -473,14 +496,14 @@ const Renderer = {
         const isBelowThreshold = totalHeld > 0 && ((totalAttended / totalHeld) * 100) < appState.userProfile.attendance_threshold;
         
         const bunkingInfo = AttendanceCalculator.calculateBunkingAdvice(subjectName, totalAttended, totalHeld);
-        const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 text-green-800' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+        const statusColorClass = bunkingInfo.status === 'safe' ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300' : bunkingInfo.status === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300' : 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300';
 
-        return `<tr class="bg-gray-100 font-semibold border-t-2 border-gray-300">
-                    <td class="px-6 py-3 text-left text-gray-800">Total</td>
-                    <td class="px-6 py-3 text-center">${totalAttended}</td>
-                    <td class="px-6 py-3 text-center">${totalHeld}</td>
-                    <td class="px-6 py-3 text-center ${isBelowThreshold ? 'text-red-600' : 'text-gray-900'}">${overallPercentage}</td>
-                    <td class="px-6 py-3 text-sm text-center"><div class="p-2 rounded-md ${statusColorClass} inline-block min-w-[180px]">${bunkingInfo.message}</div></td>
+        return `<tr class="bg-gray-100/80 dark:bg-apple-gray-800/80 font-semibold border-t-2 border-gray-300/50 dark:border-apple-gray-700/50 backdrop-blur-sm">
+                    <td class="px-6 py-4 text-left text-gray-800 dark:text-gray-200 font-bold">Total</td>
+                    <td class="px-6 py-4 text-center text-gray-800 dark:text-gray-200 font-bold">${totalAttended}</td>
+                    <td class="px-6 py-4 text-center text-gray-800 dark:text-gray-200 font-bold">${totalHeld}</td>
+                    <td class="px-6 py-4 text-center font-bold ${isBelowThreshold ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}">${overallPercentage}</td>
+                    <td class="px-6 py-4 text-sm text-center"><div class="p-3 rounded-xl ${statusColorClass} inline-block min-w-[180px] font-medium shadow-sm">${bunkingInfo.message}</div></td>
                 </tr>`;
     },
 
@@ -499,8 +522,8 @@ const Renderer = {
         if (!activeTimetable) {
             dailyLogContainerEl.innerHTML = `
                 <div class="text-center py-8">
-                    <p class="text-gray-500 mb-2">No active timetable for this date.</p>
-                    <p class="text-sm text-gray-400">Please create or activate a timetable in Settings.</p>
+                    <p class="text-gray-500 dark:text-gray-400 mb-2">No active timetable for this date.</p>
+                    <p class="text-sm text-gray-400 dark:text-gray-500">Please create or activate a timetable in Settings.</p>
                 </div>`;
             return;
         }
@@ -511,8 +534,8 @@ const Renderer = {
         if (scheduledClasses.length === 0) {
             dailyLogContainerEl.innerHTML = `
                 <div class="text-center py-8">
-                    <p class="text-gray-500 mb-2">No classes scheduled for ${dayName}.</p>
-                    <p class="text-sm text-gray-400">Edit your timetable to add classes for this day.</p>
+                    <p class="text-gray-500 dark:text-gray-400 mb-2">No classes scheduled for ${dayName}.</p>
+                    <p class="text-sm text-gray-400 dark:text-gray-500">Edit your timetable to add classes for this day.</p>
                 </div>`;
             return;
         }
@@ -561,17 +584,20 @@ const Renderer = {
     renderLectureItem(log) {
         const currentStatus = appState.pendingChanges.get(log.id) || log.status;
         const getButtonClass = (btnStatus) => {
-            const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors cursor-pointer';
+            const baseClass = 'log-btn px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer border';
             const activeClasses = {
-                'Attended': 'bg-green-500 text-white', 'Missed': 'bg-red-500 text-white',
-                'Cancelled': 'bg-yellow-500 text-white', 'Not Held Yet': 'bg-gray-400 text-white'
+                'Attended': 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-apple dark:shadow-apple-dark border-green-400/20',
+                'Missed': 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-apple dark:shadow-apple-dark border-red-400/20',
+                'Cancelled': 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-apple dark:shadow-apple-dark border-yellow-400/20',
+                'Not Held Yet': 'bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-apple dark:shadow-apple-dark border-gray-400/20'
             };
-            return currentStatus === btnStatus ? `${baseClass} ${activeClasses[btnStatus]}` : `${baseClass} bg-gray-200 dark:bg-dark-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-dark-500`;
+            const inactiveClass = 'bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-700 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-apple-gray-700/80 border-gray-200/50 dark:border-apple-gray-700/50 backdrop-blur-sm';
+            return currentStatus === btnStatus ? `${baseClass} ${activeClasses[btnStatus]}` : `${baseClass} ${inactiveClass}`;
         };
 
         return `
             <div class="log-item flex items-center justify-between p-5 bg-white/80 dark:bg-apple-gray-850/80 rounded-2xl shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50 backdrop-blur-sm transition-all duration-200 hover:shadow-apple-lg dark:hover:shadow-apple-dark-lg" data-log-id="${log.id}">
-                <strong class="text-gray-800 dark:text-white">${log.subject_name} (${log.category})</strong>
+                <strong class="text-gray-900 dark:text-white font-semibold">${log.subject_name} (${log.category})</strong>
                 <div class="log-actions flex flex-wrap gap-2 justify-end">
                     <button data-status="Attended" class="${getButtonClass('Attended')}">Attended</button>
                     <button data-status="Missed" class="${getButtonClass('Missed')}">Missed</button>
@@ -616,16 +642,16 @@ const Renderer = {
         
         // Add status indicator at the top
         const statusIndicator = activeTimetable ? `
-            <div class="mb-4 p-3 rounded-lg ${activeTimetable.type === 'special' ? 'bg-purple-50 border border-purple-200' : 'bg-blue-50 border border-blue-200'}">
-                <p class="text-sm font-medium ${activeTimetable.type === 'special' ? 'text-purple-800' : 'text-blue-800'}">
+            <div class="mb-4 p-4 rounded-2xl ${activeTimetable.type === 'special' ? 'bg-purple-50/80 dark:bg-purple-900/20 border border-purple-200/50 dark:border-purple-800/50' : 'bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50'} backdrop-blur-sm shadow-apple dark:shadow-apple-dark">
+                <p class="text-sm font-semibold ${activeTimetable.type === 'special' ? 'text-purple-800 dark:text-purple-300' : 'text-blue-800 dark:text-blue-300'}">
                     Active Timetable: ${activeTimetable.name}
-                    ${activeTimetable.type === 'special' ? 
-                        '<span class="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">Special</span>' :
-                        '<span class="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Normal</span>'
+                    ${activeTimetable.type === 'special' ?
+                        '<span class="ml-2 text-xs bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 px-2 py-1 rounded-full">Special</span>' :
+                        '<span class="ml-2 text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded-full">Normal</span>'
                     }
                 </p>
-                ${appState.isAttendancePaused() && activeTimetable.type === 'normal' ? 
-                    '<p class="text-xs text-gray-600 mt-1">Normal timetable paused automatically due to active special timetable.</p>' : ''
+                ${appState.isAttendancePaused() && activeTimetable.type === 'normal' ?
+                    '<p class="text-xs text-gray-600 dark:text-gray-400 mt-2">Normal timetable paused automatically due to active special timetable.</p>' : ''
                 }
             </div>
         ` : '';
@@ -970,7 +996,7 @@ const TimetableManager = {
 
     async toggleSpecialTimetable(timetableId) {
         const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
-        if (!timetable || (timetable.type !== 'special' && timetable.type !== 'normal')) return;
+        if (!timetable || timetable.type !== 'special') return;
         
         const wasActive = timetable.isActive;
         timetable.isActive = !wasActive;
@@ -1314,9 +1340,9 @@ const initializeEventListeners = () => {
                 const day = addClassSelect.dataset.day;
                 const list = timetableModal.querySelector(`.day-schedule-list[data-day="${day}"]`);
                 list.insertAdjacentHTML('beforeend', `
-                    <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${addClassSelect.value}">
+                    <li class="flex justify-between items-center bg-blue-100/80 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 text-sm font-medium px-3 py-2 rounded-xl backdrop-blur-sm border border-blue-200/50 dark:border-blue-800/50" data-value="${addClassSelect.value}">
                         <span>${addClassSelect.value}</span>
-                        <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
+                        <button type="button" class="remove-class-btn text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold ml-2">x</button>
                     </li>`);
                 addClassSelect.value = '';
             }
