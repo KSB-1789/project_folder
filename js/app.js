@@ -36,7 +36,8 @@ class AppState {
         return this.userProfile.timetables.find(tt => 
             (tt.type === 'normal' || tt.type === undefined) && 
             dateStr >= tt.startDate && 
-            dateStr <= tt.endDate
+            dateStr <= tt.endDate &&
+            (tt.isActive === true || tt.isActive === undefined)
         );
     }
 
@@ -44,10 +45,11 @@ class AppState {
         if (!this.userProfile?.timetables) return null;
         const dateStr = toYYYYMMDD(date);
         
-        // Return all timetables that apply to this date
+        // Return all active timetables that apply to this date
         return this.userProfile.timetables.filter(tt => 
             dateStr >= tt.startDate && 
-            dateStr <= tt.endDate
+            dateStr <= tt.endDate &&
+            (tt.isActive === true || tt.isActive === undefined)
         );
     }
 
@@ -541,7 +543,7 @@ const Renderer = {
         // Update attendance toggle button
         const toggleBtn = document.getElementById('toggle-attendance-btn');
         if (toggleBtn) {
-            toggleBtn.textContent = appState.isAttendancePaused() ? 'Resume' : 'Pause';
+            toggleBtn.textContent = appState.isAttendancePaused() ? 'Resume Normal' : 'Pause Normal';
             toggleBtn.className = appState.isAttendancePaused() 
                 ? 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-colors'
                 : 'px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors';
@@ -562,6 +564,10 @@ const Renderer = {
                 ? `<button data-id="${tt.id}" class="toggle-special-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
                 : '';
             
+            const normalControls = timetableType === 'normal' 
+                ? `<button data-id="${tt.id}" class="toggle-normal-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
+                : '';
+            
             return `<div class="p-4 bg-gray-50 border rounded-lg flex justify-between items-center">
                 <div>
                     <p class="font-bold text-gray-800">${tt.name} ${typeBadge}${activeBadge}</p>
@@ -569,6 +575,7 @@ const Renderer = {
                 </div>
                 <div class="flex gap-2">
                     ${specialControls}
+                    ${normalControls}
                     <button data-id="${tt.id}" class="duplicate-timetable-btn bg-gray-500 text-white px-3 py-1 rounded-md text-sm">Duplicate</button>
                     <button data-id="${tt.id}" class="edit-timetable-btn bg-blue-500 text-white px-3 py-1 rounded-md text-sm">Edit</button>
                     <button data-id="${tt.id}" class="delete-timetable-btn bg-red-500 text-white px-3 py-1 rounded-md text-sm">Delete</button>
@@ -759,18 +766,30 @@ const TimetableManager = {
         const formData = new FormData(timetableForm);
         const timetableType = formData.get('timetable-type') || 'normal';
         
+        // Validate dates
+        const startDate = formData.get('timetable-start-date');
+        const endDate = formData.get('timetable-end-date');
+        
+        if (!startDate || !endDate) {
+            return handleError({ message: 'Please provide both start and end dates.' }, 'Save Timetable');
+        }
+        
+        if (startDate > endDate) {
+            return handleError({ message: 'Start date cannot be after end date.' }, 'Save Timetable');
+        }
+        
         const newTimetableData = {
             id: appState.editingTimetable && !appState.editingTimetable.isDuplicate ? appState.editingTimetable.id : crypto.randomUUID(),
             name: formData.get('timetable-name'),
             type: timetableType,
-            startDate: formData.get('timetable-start-date'),
-            endDate: formData.get('timetable-end-date'),
+            startDate: startDate,
+            endDate: endDate,
             schedule: {},
             subjectWeights: {},
             isActive: timetableType === 'special' ? false : true // Special timetables start inactive
         };
         
-        // Only check for overlapping normal timetables
+        // Only check for overlapping normal timetables (but allow if user confirms)
         if (timetableType === 'normal') {
             const otherNormalTimetables = (appState.userProfile.timetables || []).filter(tt => 
                 tt.id !== newTimetableData.id && (tt.type === 'normal' || tt.type === undefined)
@@ -780,7 +799,11 @@ const TimetableManager = {
             );
 
             if (isOverlapping) {
-                return handleError({ message: 'Normal timetable dates cannot overlap with another normal timetable.' }, 'Save Timetable');
+                const confirmMessage = `This normal timetable overlaps with existing normal timetables. Do you want to continue? This will allow multiple normal timetables to be active simultaneously.`;
+                const shouldContinue = await showCustomConfirm(confirmMessage);
+                if (!shouldContinue) {
+                    return;
+                }
             }
         }
 
@@ -817,6 +840,15 @@ const TimetableManager = {
     async toggleSpecialTimetable(timetableId) {
         const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
         if (!timetable || (timetable.type !== 'special' && timetable.type !== undefined)) return;
+        
+        timetable.isActive = !timetable.isActive;
+        await DataManager.saveUserProfile({ ...appState.userProfile, timetables: appState.userProfile.timetables });
+        await runFullAttendanceUpdate();
+    },
+
+    async toggleNormalTimetable(timetableId) {
+        const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
+        if (!timetable || (timetable.type !== 'normal' && timetable.type !== undefined)) return;
         
         timetable.isActive = !timetable.isActive;
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: appState.userProfile.timetables });
@@ -934,6 +966,7 @@ const initializeEventListeners = () => {
             const addSpecialBtn = e.target.closest('#add-special-timetable-btn');
             const toggleAttendanceBtn = e.target.closest('#toggle-attendance-btn');
             const toggleSpecialBtn = e.target.closest('.toggle-special-btn');
+            const toggleNormalBtn = e.target.closest('.toggle-normal-btn');
             const editBtn = e.target.closest('.edit-timetable-btn');
             const deleteBtn = e.target.closest('.delete-timetable-btn');
             const duplicateBtn = e.target.closest('.duplicate-timetable-btn');
@@ -950,6 +983,7 @@ const initializeEventListeners = () => {
                 Renderer.renderTimetablesList();
             }
             if (toggleSpecialBtn) await TimetableManager.toggleSpecialTimetable(toggleSpecialBtn.dataset.id);
+            if (toggleNormalBtn) await TimetableManager.toggleNormalTimetable(toggleNormalBtn.dataset.id);
             if (editBtn) {
                 const timetable = appState.userProfile.timetables.find(tt => tt.id === editBtn.dataset.id);
                 TimetableManager.openModal(timetable);
