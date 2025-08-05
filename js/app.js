@@ -24,17 +24,17 @@ class AppState {
         
         // First check for special timetables
         const specialTimetable = this.userProfile.timetables.find(tt => 
-            tt.type === 'special' && 
+            (tt.type === 'special' || tt.type === undefined) && 
             dateStr >= tt.startDate && 
             dateStr <= tt.endDate &&
-            tt.isActive
+            (tt.isActive === true || tt.isActive === undefined)
         );
         
         if (specialTimetable) return specialTimetable;
         
         // Then check for normal timetables
         return this.userProfile.timetables.find(tt => 
-            tt.type === 'normal' && 
+            (tt.type === 'normal' || tt.type === undefined) && 
             dateStr >= tt.startDate && 
             dateStr <= tt.endDate
         );
@@ -250,7 +250,7 @@ const AttendanceCalculator = {
             // Skip if attendance is paused and this is a normal timetable entry
             if (appState.isAttendancePaused()) {
                 const timetablesForDate = appState.getTimetableForDate(new Date(date));
-                const hasSpecialTimetable = timetablesForDate.some(tt => tt.type === 'special' && tt.isActive);
+                const hasSpecialTimetable = timetablesForDate.some(tt => (tt.type === 'special' || tt.type === undefined) && (tt.isActive === true || tt.isActive === undefined));
                 if (!hasSpecialTimetable) continue;
             }
             
@@ -507,7 +507,8 @@ const Renderer = {
         
         timetablesListContainerEl.innerHTML = timetables.map(tt => {
             const isActive = activeTimetable && tt.id === activeTimetable.id;
-            const typeBadge = tt.type === 'special' 
+            const timetableType = tt.type || 'normal';
+            const typeBadge = timetableType === 'special' 
                 ? '<span class="text-xs font-medium text-purple-800 bg-purple-100 px-2 py-1 rounded-full">Special</span>'
                 : '<span class="text-xs font-medium text-blue-800 bg-blue-100 px-2 py-1 rounded-full">Normal</span>';
             
@@ -515,7 +516,7 @@ const Renderer = {
                 ? '<span class="text-xs font-medium text-green-800 bg-green-100 px-2 py-1 rounded-full ml-1">Active</span>' 
                 : '';
             
-            const specialControls = tt.type === 'special' 
+            const specialControls = timetableType === 'special' 
                 ? `<button data-id="${tt.id}" class="toggle-special-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
                 : '';
             
@@ -617,7 +618,7 @@ const AttendancePopulator = {
                         
                         if (!existingEntry) {
                             // Only create entries if not paused or if this is a special timetable
-                            if (!isPaused || activeTimetable.type === 'special') {
+                            if (!isPaused || (activeTimetable.type === 'special' || activeTimetable.type === undefined)) {
                                 entriesToUpsert.push({ user_id: appState.currentUser.id, date: currentDateStr, subject_name, category, status });
                             }
                         }
@@ -693,7 +694,7 @@ const TimetableManager = {
         // Only check for overlapping normal timetables
         if (timetableType === 'normal') {
             const otherNormalTimetables = (appState.userProfile.timetables || []).filter(tt => 
-                tt.id !== newTimetableData.id && tt.type === 'normal'
+                tt.id !== newTimetableData.id && (tt.type === 'normal' || tt.type === undefined)
             );
             const isOverlapping = otherNormalTimetables.some(tt => 
                 newTimetableData.startDate <= tt.endDate && newTimetableData.endDate >= tt.startDate
@@ -721,9 +722,14 @@ const TimetableManager = {
             existingTimetables.push(newTimetableData);
         }
         
-        await DataManager.saveUserProfile({ ...appState.userProfile, timetables: existingTimetables, attendance_threshold: parseInt(formData.get('timetable-min-attendance')) });
+        const attendanceThreshold = parseInt(formData.get('timetable-min-attendance')) || 75;
+        await DataManager.saveUserProfile({ 
+            ...appState.userProfile, 
+            timetables: existingTimetables, 
+            attendance_threshold: attendanceThreshold 
+        });
         appState.userProfile.timetables = existingTimetables;
-        appState.userProfile.attendance_threshold = parseInt(formData.get('timetable-min-attendance'));
+        appState.userProfile.attendance_threshold = attendanceThreshold;
 
         this.closeModal();
         await runFullAttendanceUpdate();
@@ -731,7 +737,7 @@ const TimetableManager = {
 
     async toggleSpecialTimetable(timetableId) {
         const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
-        if (!timetable || timetable.type !== 'special') return;
+        if (!timetable || (timetable.type !== 'special' && timetable.type !== undefined)) return;
         
         timetable.isActive = !timetable.isActive;
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: appState.userProfile.timetables });
@@ -788,7 +794,17 @@ const init = async () => {
         } else {
             hideLoading();
             if (!appState.userProfile) {
-                appState.userProfile = { id: appState.currentUser.id, timetables: [], attendance_threshold: 75 };
+                appState.userProfile = { 
+                    id: appState.currentUser.id, 
+                    timetables: [], 
+                    attendance_threshold: 75,
+                    attendance_paused: false
+                };
+            } else if (!appState.userProfile.attendance_threshold) {
+                appState.userProfile.attendance_threshold = 75;
+            }
+            if (!appState.userProfile.attendance_paused) {
+                appState.userProfile.attendance_paused = false;
             }
             TimetableManager.openModal();
         }
