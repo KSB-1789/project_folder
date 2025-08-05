@@ -597,7 +597,6 @@ const Renderer = {
         
         // Update attendance toggle button - only show if manual control is needed
         const toggleBtn = document.getElementById('toggle-attendance-btn');
-        const activeTimetable = appState.getActiveTimetable();
         const hasActiveSpecial = appState.userProfile.timetables?.some(tt => 
             (tt.type === 'special' || tt.type === undefined) && tt.isActive
         );
