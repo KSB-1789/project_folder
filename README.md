@@ -20,11 +20,14 @@ Built with HTML, Tailwind CSS, and Vanilla JS, and powered by Supabase for all b
 
 ### 🆕 New Advanced Features
 * **📅 Multiple Date-Ranged Timetables:** Create multiple timetables with different date ranges to handle temporary schedule changes (exam periods, workshops, etc.)
+* **🎯 Special Timetable Support:** Create special timetables that can overlap with normal ones for temporary schedule changes
+* **⏸️ Attendance Pause Control:** Pause normal attendance counting during special periods while keeping special timetables active
 * **⚖️ Custom Subject Weights:** Set custom weights (1-5) for each subject instead of fixed rules, allowing for more precise attendance calculations
 * **🔄 Automatic Timetable Switching:** The system automatically detects which timetable is active based on the current date
 * **📋 Timetable Management:** Full CRUD operations for timetables - add, edit, delete, and view all your timetables
 * **🎯 Per-Timetable Weights:** Different timetables can have different weights for the same subject
 * **📊 Visual Timetable Status:** See which timetable is currently active with visual indicators and date ranges
+* **🔄 Smart Attendance Calculation:** Intelligently manages attendance counting based on active timetable type and pause status
 
 -----
 
@@ -74,37 +77,35 @@ Follow these steps to deploy your own version of the Smart Attendance Tracker.
 3.  **Create the Database Tables:**
 
       * Go to the **SQL Editor** in your Supabase project.
-      * Click "+ New query" and run the following two SQL snippets one by one.
-
-    **A. `profiles` Table**
+      * Click "+ New query" and run the following SQL script that creates both tables:
 
     ```sql
+    -- This script will reset your database tables for the new toggle-based timetable system.
+
+    -- Drop old tables to ensure a clean slate
+    DROP TABLE IF EXISTS public.attendance_log;
+    DROP TABLE IF EXISTS public.profiles;
+
+    -- 1. Create the PROFILES table
+    -- Stores user settings, all timetables, and a reference to the currently active one.
     CREATE TABLE public.profiles (
       id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-      start_date DATE NOT NULL,
       attendance_threshold INTEGER NOT NULL,
-      timetable_json JSONB NOT NULL,
-      unique_subjects TEXT[] NOT NULL,
-      last_log_date DATE,
-      timetables JSONB DEFAULT '[]'::jsonb
+      timetables JSONB,
+      active_timetable_id UUID, -- This is new! It stores the ID of the active timetable.
+      last_log_date DATE
     );
 
+    -- Enable Row Level Security for user data privacy
     ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+    -- Policy: Users can only access their own profile
     CREATE POLICY "Users can manage their own profile" ON public.profiles FOR ALL
     USING (auth.uid() = id);
 
-    -- Add constraint and index for timetables
-    ALTER TABLE public.profiles 
-    ADD CONSTRAINT timetables_must_be_array 
-    CHECK (jsonb_typeof(timetables) = 'array');
 
-    CREATE INDEX idx_profiles_timetables ON public.profiles USING GIN (timetables);
-    ```
-
-    **B. `attendance_log` Table**
-
-    ```sql
+    -- 2. Create the ATTENDANCE_LOG table
+    -- This table structure remains the same.
     CREATE TABLE public.attendance_log (
       id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
       user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -115,13 +116,77 @@ Follow these steps to deploy your own version of the Smart Attendance Tracker.
       UNIQUE(user_id, date, subject_name, category)
     );
 
+    -- Enable Row Level Security for user data privacy
     ALTER TABLE public.attendance_log ENABLE ROW LEVEL SECURITY;
 
+    -- Policy: Users can only access their own attendance records
     CREATE POLICY "Users can manage their own attendance logs" ON public.attendance_log FOR ALL
     USING (auth.uid() = user_id);
     ```
 
-4.  **Migrate Existing Data (if upgrading from older version):**
+4.  **Enable Special Timetable Features:**
+
+      * Run the following SQL script to add special timetable support:
+
+    ```sql
+    -- Add attendance_paused column to profiles table
+    ALTER TABLE public.profiles 
+    ADD COLUMN IF NOT EXISTS attendance_paused BOOLEAN DEFAULT FALSE;
+
+    -- Create a function to help with timetable management
+    CREATE OR REPLACE FUNCTION get_active_timetable(user_id UUID, check_date DATE)
+    RETURNS JSONB AS $$
+    DECLARE
+        user_profile JSONB;
+        timetables JSONB;
+        active_timetable JSONB;
+        timetable JSONB;
+    BEGIN
+        -- Get user profile
+        SELECT profiles.* INTO user_profile 
+        FROM public.profiles 
+        WHERE id = user_id;
+        
+        IF user_profile IS NULL THEN
+            RETURN NULL;
+        END IF;
+        
+        timetables := user_profile->'timetables';
+        
+        -- First check for active special timetables
+        FOR timetable IN SELECT * FROM jsonb_array_elements(timetables)
+        LOOP
+            IF (timetable->>'type' = 'special' OR timetable->>'type' IS NULL) 
+               AND (timetable->>'isActive' = 'true' OR timetable->>'isActive' IS NULL)
+               AND check_date >= (timetable->>'startDate')::DATE 
+               AND check_date <= (timetable->>'endDate')::DATE THEN
+                RETURN timetable;
+            END IF;
+        END LOOP;
+        
+        -- Then check for normal timetables
+        FOR timetable IN SELECT * FROM jsonb_array_elements(timetables)
+        LOOP
+            IF (timetable->>'type' = 'normal' OR timetable->>'type' IS NULL)
+               AND check_date >= (timetable->>'startDate')::DATE 
+               AND check_date <= (timetable->>'endDate')::DATE THEN
+                RETURN timetable;
+            END IF;
+        END LOOP;
+        
+        RETURN NULL;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    -- Create indexes for better performance
+    CREATE INDEX IF NOT EXISTS idx_attendance_log_user_date 
+    ON public.attendance_log(user_id, date);
+
+    CREATE INDEX IF NOT EXISTS idx_attendance_log_subject_category 
+    ON public.attendance_log(subject_name, category);
+    ```
+
+5.  **Migrate Existing Data (if upgrading from older version):**
 
     If you're upgrading from an older version, run this migration script to enable the new multiple timetables feature:
 
@@ -189,7 +254,7 @@ Follow these steps to deploy your own version of the Smart Attendance Tracker.
     DROP FUNCTION migrate_existing_timetables();
     ```
 
-### 🌐 Step 3: Deploy to Netlify
+### 🌐 Step 4: Deploy to Netlify
 
 1.  **Import Your Project:**
 
@@ -226,14 +291,38 @@ Follow these steps to deploy your own version of the Smart Attendance Tracker.
 
 ## 🆕 How the New Features Work
 
-### Multiple Date-Ranged Timetables
+### Special Timetable System
 
-The system now supports multiple timetables with different date ranges. Each timetable contains:
+The system now supports **Normal** and **Special** timetables with advanced control features:
+
+#### Normal Timetables
+- Regular semester schedules
+- Cannot overlap with other normal timetables
+- Always active when within their date range
+- Used for standard attendance tracking
+
+#### Special Timetables
+- Temporary or modified schedules
+- Can overlap with normal timetables
+- Must be manually activated/deactivated
+- Used for special periods (exams, events, etc.)
+
+#### Attendance Pause Control
+- **Pause**: Stops counting attendance for normal timetables
+- **Resume**: Restarts normal attendance counting
+- Special timetables continue to work regardless of pause status
+- Visual indicator shows current pause status
+
+### Timetable Structure
+
+Each timetable contains:
 
 ```json
 {
   "id": "unique-uuid",
   "name": "Regular Semester",
+  "type": "normal", // or "special"
+  "isActive": true, // only for special timetables
   "startDate": "2024-01-15",
   "endDate": "2024-07-15",
   "schedule": {
@@ -250,10 +339,10 @@ The system now supports multiple timetables with different date ranges. Each tim
 ```
 
 **How it works:**
-- The system automatically detects which timetable is active based on the current date
-- Attendance calculations use the schedule and weights from the active timetable
-- You can create different timetables for exam periods, workshops, or other special schedules
-- All existing attendance data is preserved when switching between timetables
+- **Priority System**: Special timetables take priority over normal ones when active
+- **Smart Switching**: The system automatically detects which timetable is active
+- **Attendance Calculation**: Only counts attendance from the currently active timetable
+- **Data Preservation**: All attendance records are preserved when switching between timetables
 
 ### Custom Subject Weights
 
@@ -269,10 +358,40 @@ This allows for more precise attendance calculations based on your institution's
 
 Access the new timetable management features in the **Settings** section:
 
-1. **View All Timetables:** See a list of all your timetables with their date ranges and active status
-2. **Add New Timetable:** Create a new timetable with custom date range and subject weights
-3. **Edit Timetable:** Modify existing timetables (name, dates, schedule, weights)
-4. **Delete Timetable:** Remove timetables you no longer need
+1. **View All Timetables:** See a list of all your timetables with their date ranges, types, and active status
+2. **Add Normal/Special Timetable:** Create new timetables with different types
+3. **Activate/Deactivate Special Timetables:** Control when special timetables are active
+4. **Pause/Resume Attendance:** Control normal attendance counting
+5. **Edit Timetable:** Modify existing timetables (name, dates, schedule, weights)
+6. **Delete Timetable:** Remove timetables you no longer need
+
+### Use Cases
+
+#### Scenario 1: Exam Week
+- **Normal Timetable**: Regular semester schedule
+- **Special Timetable**: Exam week with modified subjects/times
+- **Process**: 
+  1. Create special timetable for exam week
+  2. Activate it when exams start
+  3. Deactivate when exams end
+  4. Return to normal timetable
+
+#### Scenario 2: Temporary Schedule Change
+- **Normal Timetable**: Regular schedule
+- **Special Timetable**: 2-week modified schedule
+- **Process**:
+  1. Create special timetable for the 2-week period
+  2. Pause normal attendance counting
+  3. Activate special timetable
+  4. When period ends, deactivate special and resume normal
+
+#### Scenario 3: Overlapping Periods
+- **Normal Timetable**: Continues running
+- **Special Timetable**: Covers same period with changes
+- **Process**:
+  1. Special timetable takes priority when active
+  2. Normal timetable data is preserved
+  3. Switch between them as needed
 
 -----
 

@@ -3,17 +3,8 @@ import { supabase } from './supabaseClient.js';
 // --- Constants ---
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-// --- DOM Elements (static ones) ---
-const loadingOverlay = document.getElementById('loading-overlay');
-const logoutButton = document.getElementById('logout-button');
-const dashboardView = document.getElementById('dashboard-view');
-const timetableModal = document.getElementById('timetable-modal');
-const timetableForm = document.getElementById('timetable-form');
-const extraDayModal = document.getElementById('extra-day-modal');
-const customConfirmModal = document.getElementById('custom-confirm-modal');
-const confirmModalText = document.getElementById('confirm-modal-text');
-const confirmYesBtn = document.getElementById('confirm-yes-btn');
-const confirmNoBtn = document.getElementById('confirm-no-btn');
+// --- DOM Elements (will be assigned after DOM is loaded) ---
+let loadingOverlay, logoutButton, dashboardView, timetableModal, timetableForm, extraDayModal, extraDayForm, customConfirmModal, confirmModalText, confirmYesBtn, confirmNoBtn;
 
 // --- Application State ---
 class AppState {
@@ -24,24 +15,57 @@ class AppState {
         this.setupSubjects = []; // Used only inside the timetable modal
         this.pendingChanges = new Map();
         this.editingTimetable = null; // The timetable object being edited
+        this.currentViewDate = new Date();
     }
 
     getActiveTimetable(date = new Date()) {
         if (!this.userProfile?.timetables) return null;
         const dateStr = toYYYYMMDD(date);
-        return this.userProfile.timetables.find(tt => dateStr >= tt.startDate && dateStr <= tt.endDate);
+        
+        // First check for special timetables
+        const specialTimetable = this.userProfile.timetables.find(tt => 
+            tt.type === 'special' && 
+            dateStr >= tt.startDate && 
+            dateStr <= tt.endDate &&
+            tt.isActive
+        );
+        
+        if (specialTimetable) return specialTimetable;
+        
+        // Then check for normal timetables
+        return this.userProfile.timetables.find(tt => 
+            tt.type === 'normal' && 
+            dateStr >= tt.startDate && 
+            dateStr <= tt.endDate
+        );
+    }
+
+    getTimetableForDate(date = new Date()) {
+        if (!this.userProfile?.timetables) return null;
+        const dateStr = toYYYYMMDD(date);
+        
+        // Return all timetables that apply to this date
+        return this.userProfile.timetables.filter(tt => 
+            dateStr >= tt.startDate && 
+            dateStr <= tt.endDate
+        );
+    }
+
+    isAttendancePaused() {
+        return this.userProfile?.attendancePaused || false;
     }
 }
 const appState = new AppState();
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
-    document.getElementById('loading-text').textContent = message;
-    loadingOverlay.style.display = 'flex';
+    const loadingText = document.getElementById('loading-text');
+    if (loadingText) loadingText.textContent = message;
+    if (loadingOverlay) loadingOverlay.style.display = 'flex';
 };
 
 const hideLoading = () => {
-    loadingOverlay.style.display = 'none';
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
 };
 
 const toYYYYMMDD = (date) => {
@@ -51,6 +75,8 @@ const toYYYYMMDD = (date) => {
 };
 
 const showCustomConfirm = (message) => {
+    if (!customConfirmModal) return Promise.resolve(window.confirm(message));
+    
     confirmModalText.textContent = message;
     customConfirmModal.style.display = 'flex';
     return new Promise((resolve) => {
@@ -69,7 +95,7 @@ const showCustomConfirm = (message) => {
 
 const handleError = (error, context = '') => {
     console.error(`Error in ${context}:`, error);
-    showCustomConfirm(`${context}: ${error.message || 'An unexpected error occurred.'}`);
+    alert(`${context}: ${error.message || 'An unexpected error occurred.'}`);
     hideLoading();
 };
 
@@ -84,6 +110,12 @@ const DataManager = {
     async saveUserProfile(profileData) {
         const { error } = await supabase.from('profiles').upsert(profileData);
         if (error) throw error;
+    },
+
+    async updateAttendancePauseStatus(paused) {
+        const { error } = await supabase.from('profiles').update({ attendancePaused: paused }).eq('id', appState.currentUser.id);
+        if (error) throw error;
+        appState.userProfile.attendancePaused = paused;
     },
 
     async loadAttendanceLog() {
@@ -110,6 +142,23 @@ const AttendanceCalculator = {
     getWeight(subjectFullName, date) {
         const activeTimetable = appState.getActiveTimetable(date);
         return activeTimetable?.subjectWeights?.[subjectFullName] || 1;
+    },
+
+    getSubjectAttendance(subjectName, category, date) {
+        const logEntries = appState.attendanceLog.filter(log => 
+            log.subject_name === subjectName && 
+            log.category === category &&
+            new Date(log.date) <= new Date(date)
+        );
+        
+        let attended = 0, held = 0;
+        logEntries.forEach(log => {
+            const weight = this.getWeight(`${log.subject_name} ${log.category}`, new Date(log.date));
+            if (log.status === 'Attended' || log.status === 'Missed') held += weight;
+            if (log.status === 'Attended') attended += weight;
+        });
+        
+        return { attended, held };
     },
     
     getUpcomingScheduleForSubject(subjectName) {
@@ -185,7 +234,7 @@ const AttendanceCalculator = {
         const summary = {};
         const allSubjects = new Set();
         (appState.userProfile.timetables || []).forEach(tt => {
-            Object.keys(tt.subjectWeights).forEach(subFullName => {
+            Object.keys(tt.subjectWeights || {}).forEach(subFullName => {
                 const subjectName = subFullName.split(' ').slice(0, -1).join(' ');
                 allSubjects.add(subjectName);
             });
@@ -197,6 +246,14 @@ const AttendanceCalculator = {
 
         for (const log of appState.attendanceLog) {
             const { date, subject_name, category, status } = log;
+            
+            // Skip if attendance is paused and this is a normal timetable entry
+            if (appState.isAttendancePaused()) {
+                const timetablesForDate = appState.getTimetableForDate(new Date(date));
+                const hasSpecialTimetable = timetablesForDate.some(tt => tt.type === 'special' && tt.isActive);
+                if (!hasSpecialTimetable) continue;
+            }
+            
             const weight = this.getWeight(`${subject_name} ${category}`, new Date(date));
             if (!summary[subject_name]) continue;
 
@@ -228,9 +285,24 @@ const Renderer = {
                 <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
                 <div class="space-y-6">
                     <div>
+                        <h3 class="text-lg font-semibold text-gray-800 mb-3">Attendance Control</h3>
+                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                            <div>
+                                <p class="text-sm font-medium text-gray-700">Attendance Tracking</p>
+                                <p class="text-xs text-gray-500">Pause normal attendance counting during special periods</p>
+                            </div>
+                            <button id="toggle-attendance-btn" class="px-4 py-2 rounded-lg font-semibold transition-colors">
+                                ${appState.isAttendancePaused() ? 'Resume' : 'Pause'}
+                            </button>
+                        </div>
+                    </div>
+                    <div>
                         <h3 class="text-lg font-semibold text-gray-800 mb-3">Timetable Management</h3>
                         <div id="timetables-list" class="space-y-3 mb-4"></div>
-                        <button id="add-timetable-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Add New Timetable</button>
+                        <div class="flex gap-2">
+                            <button id="add-normal-timetable-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Add Normal Timetable</button>
+                            <button id="add-special-timetable-btn" class="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">Add Special Timetable</button>
+                        </div>
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-700">Clear Attendance Records</p>
@@ -247,6 +319,32 @@ const Renderer = {
             </div>`;
             document.getElementById('daily-log-container').innerHTML = '';
         } else {
+            const activeTimetable = appState.getActiveTimetable();
+            const statusIndicator = document.createElement('div');
+            statusIndicator.className = 'mb-4 p-3 rounded-lg border-l-4';
+            
+            if (activeTimetable.type === 'special') {
+                statusIndicator.className += ' bg-purple-50 border-purple-400';
+                statusIndicator.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="text-purple-800 font-semibold">Special Timetable Active:</span>
+                        <span class="ml-2 text-purple-600">${activeTimetable.name}</span>
+                        ${appState.isAttendancePaused() ? '<span class="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Normal Attendance Paused</span>' : ''}
+                    </div>
+                `;
+            } else {
+                statusIndicator.className += ' bg-blue-50 border-blue-400';
+                statusIndicator.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="text-blue-800 font-semibold">Normal Timetable Active:</span>
+                        <span class="ml-2 text-blue-600">${activeTimetable.name}</span>
+                    </div>
+                `;
+            }
+            
+            const summaryContainer = document.getElementById('attendance-summary');
+            summaryContainer.insertBefore(statusIndicator, summaryContainer.firstChild);
+            
             this.renderSummaryTable();
             this.renderDailyLog();
         }
@@ -346,6 +444,7 @@ const Renderer = {
     },
 
     renderDailyLog(dateStr = toYYYYMMDD(new Date())) {
+        appState.currentViewDate = new Date(dateStr);
         document.getElementById('historical-date').value = dateStr;
         const dailyLogContainerEl = document.getElementById('daily-log-container');
         const lecturesOnDate = appState.attendanceLog.filter(log => log.date === dateStr);
@@ -396,14 +495,37 @@ const Renderer = {
         const timetables = appState.userProfile?.timetables || [];
         const activeTimetable = appState.getActiveTimetable();
         const timetablesListContainerEl = document.getElementById('timetables-list');
+        
+        // Update attendance toggle button
+        const toggleBtn = document.getElementById('toggle-attendance-btn');
+        if (toggleBtn) {
+            toggleBtn.textContent = appState.isAttendancePaused() ? 'Resume' : 'Pause';
+            toggleBtn.className = appState.isAttendancePaused() 
+                ? 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-colors'
+                : 'px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors';
+        }
+        
         timetablesListContainerEl.innerHTML = timetables.map(tt => {
             const isActive = activeTimetable && tt.id === activeTimetable.id;
+            const typeBadge = tt.type === 'special' 
+                ? '<span class="text-xs font-medium text-purple-800 bg-purple-100 px-2 py-1 rounded-full">Special</span>'
+                : '<span class="text-xs font-medium text-blue-800 bg-blue-100 px-2 py-1 rounded-full">Normal</span>';
+            
+            const activeBadge = isActive 
+                ? '<span class="text-xs font-medium text-green-800 bg-green-100 px-2 py-1 rounded-full ml-1">Active</span>' 
+                : '';
+            
+            const specialControls = tt.type === 'special' 
+                ? `<button data-id="${tt.id}" class="toggle-special-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
+                : '';
+            
             return `<div class="p-4 bg-gray-50 border rounded-lg flex justify-between items-center">
                 <div>
-                    <p class="font-bold text-gray-800">${tt.name} ${isActive ? '<span class="text-xs font-medium text-green-800 bg-green-100 px-2 py-1 rounded-full">Active</span>' : ''}</p>
+                    <p class="font-bold text-gray-800">${tt.name} ${typeBadge}${activeBadge}</p>
                     <p class="text-sm text-gray-600">${tt.startDate} to ${tt.endDate}</p>
                 </div>
                 <div class="flex gap-2">
+                    ${specialControls}
                     <button data-id="${tt.id}" class="duplicate-timetable-btn bg-gray-500 text-white px-3 py-1 rounded-md text-sm">Duplicate</button>
                     <button data-id="${tt.id}" class="edit-timetable-btn bg-blue-500 text-white px-3 py-1 rounded-md text-sm">Edit</button>
                     <button data-id="${tt.id}" class="delete-timetable-btn bg-red-500 text-white px-3 py-1 rounded-md text-sm">Delete</button>
@@ -468,12 +590,14 @@ const AttendancePopulator = {
         let entriesToUpsert = [];
         let currentDate = new Date(populateFromDate);
         const todayStr = toYYYYMMDD(new Date());
+        const isPaused = appState.isAttendancePaused();
         
         while (toYYYYMMDD(currentDate) <= populateUntilDateStr) {
             const dayIndex = currentDate.getDay();
             if (dayIndex >= 1 && dayIndex <= 5) {
                 const dayName = WEEKDAYS[dayIndex - 1];
                 const activeTimetable = appState.getActiveTimetable(currentDate);
+                
                 if (activeTimetable) {
                     const lecturesForDay = [...new Set(activeTimetable.schedule[dayName] || [])];
                     const currentDateStr = toYYYYMMDD(currentDate);
@@ -483,7 +607,20 @@ const AttendancePopulator = {
                         const parts = subjectString.split(' ');
                         const category = parts.pop();
                         const subject_name = parts.join(' ');
-                        entriesToUpsert.push({ user_id: appState.currentUser.id, date: currentDateStr, subject_name, category, status });
+                        
+                        // Check if this entry already exists
+                        const existingEntry = appState.attendanceLog.find(log => 
+                            log.date === currentDateStr && 
+                            log.subject_name === subject_name && 
+                            log.category === category
+                        );
+                        
+                        if (!existingEntry) {
+                            // Only create entries if not paused or if this is a special timetable
+                            if (!isPaused || activeTimetable.type === 'special') {
+                                entriesToUpsert.push({ user_id: appState.currentUser.id, date: currentDateStr, subject_name, category, status });
+                            }
+                        }
                     });
                 }
             }
@@ -502,7 +639,7 @@ const AttendancePopulator = {
 
 // --- Timetable Management ---
 const TimetableManager = {
-    openModal(timetableToEdit = null, isDuplicate = false) {
+    openModal(timetableToEdit = null, isDuplicate = false, timetableType = 'normal') {
         appState.editingTimetable = timetableToEdit ? { ...timetableToEdit, isDuplicate } : null;
         const title = document.getElementById('timetable-modal-title');
         
@@ -515,16 +652,18 @@ const TimetableManager = {
             document.getElementById('timetable-min-attendance').value = appState.userProfile.attendance_threshold;
             document.getElementById('timetable-start-date').value = timetableToEdit.startDate;
             document.getElementById('timetable-end-date').value = timetableToEdit.endDate;
+            document.getElementById('timetable-type').value = timetableToEdit.type || 'normal';
             
-            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights).map(([fullName, weight]) => {
+            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights || {}).map(([fullName, weight]) => {
                 const parts = fullName.split(' ');
                 const category = parts.pop();
                 const name = parts.join(' ');
                 return { name, category, weight };
             });
         } else {
-            title.textContent = 'Add New Timetable';
+            title.textContent = `Add New ${timetableType === 'special' ? 'Special' : 'Normal'} Timetable`;
             document.getElementById('timetable-min-attendance').value = appState.userProfile?.attendance_threshold || 75;
+            document.getElementById('timetable-type').value = timetableType;
         }
 
         Renderer.renderTimetableModalUI();
@@ -538,20 +677,31 @@ const TimetableManager = {
 
     async save() {
         const formData = new FormData(timetableForm);
+        const timetableType = formData.get('timetable-type') || 'normal';
+        
         const newTimetableData = {
             id: appState.editingTimetable && !appState.editingTimetable.isDuplicate ? appState.editingTimetable.id : crypto.randomUUID(),
             name: formData.get('timetable-name'),
+            type: timetableType,
             startDate: formData.get('timetable-start-date'),
             endDate: formData.get('timetable-end-date'),
             schedule: {},
-            subjectWeights: {}
+            subjectWeights: {},
+            isActive: timetableType === 'special' ? false : true // Special timetables start inactive
         };
         
-        const otherTimetables = (appState.userProfile.timetables || []).filter(tt => tt.id !== newTimetableData.id);
-        const isOverlapping = otherTimetables.some(tt => newTimetableData.startDate <= tt.endDate && newTimetableData.endDate >= tt.startDate);
+        // Only check for overlapping normal timetables
+        if (timetableType === 'normal') {
+            const otherNormalTimetables = (appState.userProfile.timetables || []).filter(tt => 
+                tt.id !== newTimetableData.id && tt.type === 'normal'
+            );
+            const isOverlapping = otherNormalTimetables.some(tt => 
+                newTimetableData.startDate <= tt.endDate && newTimetableData.endDate >= tt.startDate
+            );
 
-        if (isOverlapping) {
-            return handleError({ message: 'Timetable dates cannot overlap with an existing timetable.' }, 'Save Timetable');
+            if (isOverlapping) {
+                return handleError({ message: 'Normal timetable dates cannot overlap with another normal timetable.' }, 'Save Timetable');
+            }
         }
 
         appState.setupSubjects.forEach(sub => {
@@ -573,8 +723,18 @@ const TimetableManager = {
         
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: existingTimetables, attendance_threshold: parseInt(formData.get('timetable-min-attendance')) });
         appState.userProfile.timetables = existingTimetables;
+        appState.userProfile.attendance_threshold = parseInt(formData.get('timetable-min-attendance'));
 
         this.closeModal();
+        await runFullAttendanceUpdate();
+    },
+
+    async toggleSpecialTimetable(timetableId) {
+        const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
+        if (!timetable || timetable.type !== 'special') return;
+        
+        timetable.isActive = !timetable.isActive;
+        await DataManager.saveUserProfile({ ...appState.userProfile, timetables: appState.userProfile.timetables });
         await runFullAttendanceUpdate();
     },
 
@@ -584,6 +744,29 @@ const TimetableManager = {
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: updatedTimetables });
         appState.userProfile.timetables = updatedTimetables;
         await runFullAttendanceUpdate();
+    }
+};
+
+// --- Extra Day Management ---
+const ExtraDayManager = {
+    async addExtraDay(date, weekdayToFollow) {
+        const activeTimetable = appState.getActiveTimetable(new Date(date));
+        if (!activeTimetable) {
+            throw new Error('No active timetable for the selected date');
+        }
+
+        const lecturesForDay = [...new Set(activeTimetable.schedule[weekdayToFollow] || [])];
+        const entriesToUpsert = lecturesForDay.map(subjectString => {
+            const parts = subjectString.split(' ');
+            const category = parts.pop();
+            const subject_name = parts.join(' ');
+            return { user_id: appState.currentUser.id, date, subject_name, category, status: 'Not Held Yet' };
+        });
+
+        if (entriesToUpsert.length > 0) {
+            const { error } = await supabase.from('attendance_log').upsert(entriesToUpsert, { onConflict: 'user_id,date,subject_name,category' });
+            if (error) throw error;
+        }
     }
 };
 
@@ -611,8 +794,6 @@ const init = async () => {
         }
     } catch (error) {
         handleError(error, 'Initialization');
-    } finally {
-        hideLoading();
     }
 };
 
@@ -626,11 +807,16 @@ const runFullAttendanceUpdate = async () => {
 
 // --- Event Listeners ---
 const initializeEventListeners = () => {
-    logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
+    if (logoutButton) {
+        logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
+    }
 
-    document.body.addEventListener('click', async (e) => {
+            document.body.addEventListener('click', async (e) => {
         try {
-            const addBtn = e.target.closest('#add-timetable-btn');
+            const addNormalBtn = e.target.closest('#add-normal-timetable-btn');
+            const addSpecialBtn = e.target.closest('#add-special-timetable-btn');
+            const toggleAttendanceBtn = e.target.closest('#toggle-attendance-btn');
+            const toggleSpecialBtn = e.target.closest('.toggle-special-btn');
             const editBtn = e.target.closest('.edit-timetable-btn');
             const deleteBtn = e.target.closest('.delete-timetable-btn');
             const duplicateBtn = e.target.closest('.duplicate-timetable-btn');
@@ -639,7 +825,14 @@ const initializeEventListeners = () => {
             const logActionBtn = e.target.closest('.log-btn');
             const saveAttendanceBtn = e.target.closest('#save-attendance-btn');
             
-            if (addBtn) TimetableManager.openModal();
+            if (addNormalBtn) TimetableManager.openModal(null, false, 'normal');
+            if (addSpecialBtn) TimetableManager.openModal(null, false, 'special');
+            if (toggleAttendanceBtn) {
+                const newPausedState = !appState.isAttendancePaused();
+                await DataManager.updateAttendancePauseStatus(newPausedState);
+                Renderer.renderTimetablesList();
+            }
+            if (toggleSpecialBtn) await TimetableManager.toggleSpecialTimetable(toggleSpecialBtn.dataset.id);
             if (editBtn) {
                 const timetable = appState.userProfile.timetables.find(tt => tt.id === editBtn.dataset.id);
                 TimetableManager.openModal(timetable);
@@ -657,7 +850,7 @@ const initializeEventListeners = () => {
                     window.location.reload();
                 }
             }
-            if (extraDayBtn) extraDayModal.style.display = 'flex';
+            if (extraDayBtn && extraDayModal) extraDayModal.style.display = 'flex';
             if (logActionBtn) {
                 const logItem = logActionBtn.closest('.log-item');
                 const logId = parseInt(logItem.dataset.logId);
@@ -674,62 +867,84 @@ const initializeEventListeners = () => {
         }
     });
 
-    timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
+    if (timetableForm) {
+        timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
+    }
+
+    if (extraDayForm) {
+        extraDayForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const date = document.getElementById('extra-day-date').value;
+                const weekday = document.getElementById('weekday-to-follow').value;
+                await ExtraDayManager.addExtraDay(date, weekday);
+                extraDayModal.style.display = 'none';
+                await runFullAttendanceUpdate();
+            } catch (error) {
+                handleError(error, 'Add Extra Day');
+            }
+        });
+    }
     
     document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', (e) => {
-        e.target.closest('.fixed').style.display = 'none';
+        const modal = e.target.closest('.fixed');
+        if (modal) modal.style.display = 'none';
     }));
 
-    timetableModal.addEventListener('click', (e) => {
-        if (e.target.id === 'timetable-add-subject-btn') {
-            const nameInput = document.getElementById('timetable-subject-name');
-            const name = nameInput.value.trim();
-            const category = document.getElementById('timetable-subject-category').value;
-            const weight = parseInt(document.getElementById('timetable-subject-weight').value);
-            if (name && !appState.setupSubjects.some(s => s.name === name && s.category === category)) {
-                appState.setupSubjects.push({ name, category, weight });
+    if (timetableModal) {
+        timetableModal.addEventListener('click', (e) => {
+            if (e.target.id === 'timetable-add-subject-btn') {
+                const nameInput = document.getElementById('timetable-subject-name');
+                const name = nameInput.value.trim();
+                const category = document.getElementById('timetable-subject-category').value;
+                const weight = parseInt(document.getElementById('timetable-subject-weight').value);
+                if (name && !appState.setupSubjects.some(s => s.name === name && s.category === category)) {
+                    appState.setupSubjects.push({ name, category, weight });
+                    Renderer.renderTimetableModalUI();
+                    nameInput.value = '';
+                }
+            }
+            const removeSubjectBtn = e.target.closest('.remove-subject-btn');
+            if (removeSubjectBtn) {
+                appState.setupSubjects.splice(parseInt(removeSubjectBtn.dataset.index), 1);
                 Renderer.renderTimetableModalUI();
-                nameInput.value = '';
             }
-        }
-        const removeSubjectBtn = e.target.closest('.remove-subject-btn');
-        if (removeSubjectBtn) {
-            appState.setupSubjects.splice(parseInt(removeSubjectBtn.dataset.index), 1);
-            Renderer.renderTimetableModalUI();
-        }
-        const addClassSelect = e.target.closest('.add-class-select');
-        if (addClassSelect && addClassSelect.value) {
-            const day = addClassSelect.dataset.day;
-            const list = timetableModal.querySelector(`.day-schedule-list[data-day="${day}"]`);
-            list.insertAdjacentHTML('beforeend', `
-                <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${addClassSelect.value}">
-                    <span>${addClassSelect.value}</span>
-                    <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
-                </li>`);
-            addClassSelect.value = '';
-        }
-        const removeClassBtn = e.target.closest('.remove-class-btn');
-        if (removeClassBtn) {
-            removeClassBtn.closest('li').remove();
-        }
-    });
+            const addClassSelect = e.target.closest('.add-class-select');
+            if (addClassSelect && addClassSelect.value) {
+                const day = addClassSelect.dataset.day;
+                const list = timetableModal.querySelector(`.day-schedule-list[data-day="${day}"]`);
+                list.insertAdjacentHTML('beforeend', `
+                    <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${addClassSelect.value}">
+                        <span>${addClassSelect.value}</span>
+                        <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
+                    </li>`);
+                addClassSelect.value = '';
+            }
+            const removeClassBtn = e.target.closest('.remove-class-btn');
+            if (removeClassBtn) {
+                removeClassBtn.closest('li').remove();
+            }
+        });
+    }
 
-    dashboardView.addEventListener('change', (e) => {
-        if (e.target.id === 'historical-date') {
-            if (appState.pendingChanges.size > 0) {
-                showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
-                    if(discard) {
-                        appState.pendingChanges.clear();
-                        Renderer.renderDailyLog(e.target.value);
-                    } else {
-                        e.target.value = toYYYYMMDD(new Date(appState.currentViewDate));
-                    }
-                });
-            } else {
-                Renderer.renderDailyLog(e.target.value);
+    if (dashboardView) {
+        dashboardView.addEventListener('change', (e) => {
+            if (e.target.id === 'historical-date') {
+                if (appState.pendingChanges.size > 0) {
+                    showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
+                        if(discard) {
+                            appState.pendingChanges.clear();
+                            Renderer.renderDailyLog(e.target.value);
+                        } else {
+                            e.target.value = toYYYYMMDD(appState.currentViewDate);
+                        }
+                    });
+                } else {
+                    Renderer.renderDailyLog(e.target.value);
+                }
             }
-        }
-    });
+        });
+    }
 };
 
 // --- Application Entry Point ---
@@ -741,6 +956,7 @@ document.addEventListener('DOMContentLoaded', () => {
     timetableModal = document.getElementById('timetable-modal');
     timetableForm = document.getElementById('timetable-form');
     extraDayModal = document.getElementById('extra-day-modal');
+    extraDayForm = document.getElementById('extra-day-form');
     customConfirmModal = document.getElementById('custom-confirm-modal');
     confirmModalText = document.getElementById('confirm-modal-text');
     confirmYesBtn = document.getElementById('confirm-yes-btn');
@@ -749,4 +965,4 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize the app and its listeners
     init();
     initializeEventListeners();
-});
+});1.
