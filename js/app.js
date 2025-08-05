@@ -3,8 +3,17 @@ import { supabase } from './supabaseClient.js';
 // --- Constants ---
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
-// --- DOM Elements (will be assigned after DOM is loaded) ---
-let loadingOverlay, logoutButton, dashboardView, timetableModal, timetableForm, extraDayModal, extraDayForm, customConfirmModal, confirmModalText, confirmYesBtn, confirmNoBtn;
+// --- DOM Elements (static ones) ---
+const loadingOverlay = document.getElementById('loading-overlay');
+const logoutButton = document.getElementById('logout-button');
+const dashboardView = document.getElementById('dashboard-view');
+const timetableModal = document.getElementById('timetable-modal');
+const timetableForm = document.getElementById('timetable-form');
+const extraDayModal = document.getElementById('extra-day-modal');
+const customConfirmModal = document.getElementById('custom-confirm-modal');
+const confirmModalText = document.getElementById('confirm-modal-text');
+const confirmYesBtn = document.getElementById('confirm-yes-btn');
+const confirmNoBtn = document.getElementById('confirm-no-btn');
 
 // --- Application State ---
 class AppState {
@@ -15,7 +24,6 @@ class AppState {
         this.setupSubjects = []; // Used only inside the timetable modal
         this.pendingChanges = new Map();
         this.editingTimetable = null; // The timetable object being edited
-        this.currentViewDate = new Date();
     }
 
     getActiveTimetable(date = new Date()) {
@@ -28,13 +36,12 @@ const appState = new AppState();
 
 // --- Utility Functions ---
 const showLoading = (message = 'Loading...') => {
-    const loadingText = document.getElementById('loading-text');
-    if (loadingText) loadingText.textContent = message;
-    if (loadingOverlay) loadingOverlay.style.display = 'flex';
+    document.getElementById('loading-text').textContent = message;
+    loadingOverlay.style.display = 'flex';
 };
 
 const hideLoading = () => {
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    loadingOverlay.style.display = 'none';
 };
 
 const toYYYYMMDD = (date) => {
@@ -44,8 +51,6 @@ const toYYYYMMDD = (date) => {
 };
 
 const showCustomConfirm = (message) => {
-    if (!customConfirmModal) return Promise.resolve(window.confirm(message));
-    
     confirmModalText.textContent = message;
     customConfirmModal.style.display = 'flex';
     return new Promise((resolve) => {
@@ -64,7 +69,7 @@ const showCustomConfirm = (message) => {
 
 const handleError = (error, context = '') => {
     console.error(`Error in ${context}:`, error);
-    alert(`${context}: ${error.message || 'An unexpected error occurred.'}`);
+    showCustomConfirm(`${context}: ${error.message || 'An unexpected error occurred.'}`);
     hideLoading();
 };
 
@@ -180,7 +185,7 @@ const AttendanceCalculator = {
         const summary = {};
         const allSubjects = new Set();
         (appState.userProfile.timetables || []).forEach(tt => {
-            Object.keys(tt.subjectWeights || {}).forEach(subFullName => {
+            Object.keys(tt.subjectWeights).forEach(subFullName => {
                 const subjectName = subFullName.split(' ').slice(0, -1).join(' ');
                 allSubjects.add(subjectName);
             });
@@ -341,7 +346,6 @@ const Renderer = {
     },
 
     renderDailyLog(dateStr = toYYYYMMDD(new Date())) {
-        appState.currentViewDate = new Date(dateStr);
         document.getElementById('historical-date').value = dateStr;
         const dailyLogContainerEl = document.getElementById('daily-log-container');
         const lecturesOnDate = appState.attendanceLog.filter(log => log.date === dateStr);
@@ -512,7 +516,7 @@ const TimetableManager = {
             document.getElementById('timetable-start-date').value = timetableToEdit.startDate;
             document.getElementById('timetable-end-date').value = timetableToEdit.endDate;
             
-            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights || {}).map(([fullName, weight]) => {
+            appState.setupSubjects = Object.entries(timetableToEdit.subjectWeights).map(([fullName, weight]) => {
                 const parts = fullName.split(' ');
                 const category = parts.pop();
                 const name = parts.join(' ');
@@ -569,7 +573,6 @@ const TimetableManager = {
         
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: existingTimetables, attendance_threshold: parseInt(formData.get('timetable-min-attendance')) });
         appState.userProfile.timetables = existingTimetables;
-        appState.userProfile.attendance_threshold = parseInt(formData.get('timetable-min-attendance'));
 
         this.closeModal();
         await runFullAttendanceUpdate();
@@ -581,29 +584,6 @@ const TimetableManager = {
         await DataManager.saveUserProfile({ ...appState.userProfile, timetables: updatedTimetables });
         appState.userProfile.timetables = updatedTimetables;
         await runFullAttendanceUpdate();
-    }
-};
-
-// --- Extra Day Management ---
-const ExtraDayManager = {
-    async addExtraDay(date, weekdayToFollow) {
-        const activeTimetable = appState.getActiveTimetable(new Date(date));
-        if (!activeTimetable) {
-            throw new Error('No active timetable for the selected date');
-        }
-
-        const lecturesForDay = [...new Set(activeTimetable.schedule[weekdayToFollow] || [])];
-        const entriesToUpsert = lecturesForDay.map(subjectString => {
-            const parts = subjectString.split(' ');
-            const category = parts.pop();
-            const subject_name = parts.join(' ');
-            return { user_id: appState.currentUser.id, date, subject_name, category, status: 'Not Held Yet' };
-        });
-
-        if (entriesToUpsert.length > 0) {
-            const { error } = await supabase.from('attendance_log').upsert(entriesToUpsert, { onConflict: 'user_id,date,subject_name,category' });
-            if (error) throw error;
-        }
     }
 };
 
@@ -631,6 +611,8 @@ const init = async () => {
         }
     } catch (error) {
         handleError(error, 'Initialization');
+    } finally {
+        hideLoading();
     }
 };
 
@@ -644,9 +626,7 @@ const runFullAttendanceUpdate = async () => {
 
 // --- Event Listeners ---
 const initializeEventListeners = () => {
-    if (logoutButton) {
-        logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
-    }
+    logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
 
     document.body.addEventListener('click', async (e) => {
         try {
@@ -677,7 +657,7 @@ const initializeEventListeners = () => {
                     window.location.reload();
                 }
             }
-            if (extraDayBtn && extraDayModal) extraDayModal.style.display = 'flex';
+            if (extraDayBtn) extraDayModal.style.display = 'flex';
             if (logActionBtn) {
                 const logItem = logActionBtn.closest('.log-item');
                 const logId = parseInt(logItem.dataset.logId);
@@ -694,84 +674,62 @@ const initializeEventListeners = () => {
         }
     });
 
-    if (timetableForm) {
-        timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
-    }
-
-    if (extraDayForm) {
-        extraDayForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            try {
-                const date = document.getElementById('extra-day-date').value;
-                const weekday = document.getElementById('weekday-to-follow').value;
-                await ExtraDayManager.addExtraDay(date, weekday);
-                extraDayModal.style.display = 'none';
-                await runFullAttendanceUpdate();
-            } catch (error) {
-                handleError(error, 'Add Extra Day');
-            }
-        });
-    }
+    timetableForm.addEventListener('submit', (e) => { e.preventDefault(); TimetableManager.save(); });
     
     document.querySelectorAll('.modal-cancel-btn').forEach(btn => btn.addEventListener('click', (e) => {
-        const modal = e.target.closest('.fixed');
-        if (modal) modal.style.display = 'none';
+        e.target.closest('.fixed').style.display = 'none';
     }));
 
-    if (timetableModal) {
-        timetableModal.addEventListener('click', (e) => {
-            if (e.target.id === 'timetable-add-subject-btn') {
-                const nameInput = document.getElementById('timetable-subject-name');
-                const name = nameInput.value.trim();
-                const category = document.getElementById('timetable-subject-category').value;
-                const weight = parseInt(document.getElementById('timetable-subject-weight').value);
-                if (name && !appState.setupSubjects.some(s => s.name === name && s.category === category)) {
-                    appState.setupSubjects.push({ name, category, weight });
-                    Renderer.renderTimetableModalUI();
-                    nameInput.value = '';
-                }
-            }
-            const removeSubjectBtn = e.target.closest('.remove-subject-btn');
-            if (removeSubjectBtn) {
-                appState.setupSubjects.splice(parseInt(removeSubjectBtn.dataset.index), 1);
+    timetableModal.addEventListener('click', (e) => {
+        if (e.target.id === 'timetable-add-subject-btn') {
+            const nameInput = document.getElementById('timetable-subject-name');
+            const name = nameInput.value.trim();
+            const category = document.getElementById('timetable-subject-category').value;
+            const weight = parseInt(document.getElementById('timetable-subject-weight').value);
+            if (name && !appState.setupSubjects.some(s => s.name === name && s.category === category)) {
+                appState.setupSubjects.push({ name, category, weight });
                 Renderer.renderTimetableModalUI();
+                nameInput.value = '';
             }
-            const addClassSelect = e.target.closest('.add-class-select');
-            if (addClassSelect && addClassSelect.value) {
-                const day = addClassSelect.dataset.day;
-                const list = timetableModal.querySelector(`.day-schedule-list[data-day="${day}"]`);
-                list.insertAdjacentHTML('beforeend', `
-                    <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${addClassSelect.value}">
-                        <span>${addClassSelect.value}</span>
-                        <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
-                    </li>`);
-                addClassSelect.value = '';
-            }
-            const removeClassBtn = e.target.closest('.remove-class-btn');
-            if (removeClassBtn) {
-                removeClassBtn.closest('li').remove();
-            }
-        });
-    }
+        }
+        const removeSubjectBtn = e.target.closest('.remove-subject-btn');
+        if (removeSubjectBtn) {
+            appState.setupSubjects.splice(parseInt(removeSubjectBtn.dataset.index), 1);
+            Renderer.renderTimetableModalUI();
+        }
+        const addClassSelect = e.target.closest('.add-class-select');
+        if (addClassSelect && addClassSelect.value) {
+            const day = addClassSelect.dataset.day;
+            const list = timetableModal.querySelector(`.day-schedule-list[data-day="${day}"]`);
+            list.insertAdjacentHTML('beforeend', `
+                <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${addClassSelect.value}">
+                    <span>${addClassSelect.value}</span>
+                    <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
+                </li>`);
+            addClassSelect.value = '';
+        }
+        const removeClassBtn = e.target.closest('.remove-class-btn');
+        if (removeClassBtn) {
+            removeClassBtn.closest('li').remove();
+        }
+    });
 
-    if (dashboardView) {
-        dashboardView.addEventListener('change', (e) => {
-            if (e.target.id === 'historical-date') {
-                if (appState.pendingChanges.size > 0) {
-                    showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
-                        if(discard) {
-                            appState.pendingChanges.clear();
-                            Renderer.renderDailyLog(e.target.value);
-                        } else {
-                            e.target.value = toYYYYMMDD(appState.currentViewDate);
-                        }
-                    });
-                } else {
-                    Renderer.renderDailyLog(e.target.value);
-                }
+    dashboardView.addEventListener('change', (e) => {
+        if (e.target.id === 'historical-date') {
+            if (appState.pendingChanges.size > 0) {
+                showCustomConfirm("You have unsaved changes. Discard them?").then(discard => {
+                    if(discard) {
+                        appState.pendingChanges.clear();
+                        Renderer.renderDailyLog(e.target.value);
+                    } else {
+                        e.target.value = toYYYYMMDD(new Date(appState.currentViewDate));
+                    }
+                });
+            } else {
+                Renderer.renderDailyLog(e.target.value);
             }
-        });
-    }
+        }
+    });
 };
 
 // --- Application Entry Point ---
@@ -783,7 +741,6 @@ document.addEventListener('DOMContentLoaded', () => {
     timetableModal = document.getElementById('timetable-modal');
     timetableForm = document.getElementById('timetable-form');
     extraDayModal = document.getElementById('extra-day-modal');
-    extraDayForm = document.getElementById('extra-day-form');
     customConfirmModal = document.getElementById('custom-confirm-modal');
     confirmModalText = document.getElementById('confirm-modal-text');
     confirmYesBtn = document.getElementById('confirm-yes-btn');
