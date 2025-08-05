@@ -20,13 +20,55 @@
                             400: '#94a3b8',
                             500: '#64748b',
                             600: '#475569',
-                            700: '#334155',
-                            800: '#1e293b',
-                            900: '#0f172a',
+                            700: '#2d3748',
+                            800: '#1a202c',
+                            850: '#161b22',
+                            900: '#0d1117',
+                            950: '#010409',
+                        },
+                        apple: {
+                            gray: {
+                                50: '#f9fafb',
+                                100: '#f3f4f6',
+                                200: '#e5e7eb',
+                                300: '#d1d5db',
+                                400: '#9ca3af',
+                                500: '#6b7280',
+                                600: '#4b5563',
+                                700: '#374151',
+                                800: '#1f2937',
+                                850: '#161b22',
+                                900: '#0f172a',
+                                950: '#030712'
+                            }
                         }
+                    },
+                    backdropBlur: {
+                        xs: '2px',
+                    },
+                    boxShadow: {
+                        'apple': '0 4px 16px 0 rgba(0, 0, 0, 0.12)',
+                        'apple-dark': '0 4px 16px 0 rgba(0, 0, 0, 0.24)',
+                        'apple-lg': '0 10px 40px 0 rgba(0, 0, 0, 0.15)',
+                        'apple-dark-lg': '0 10px 40px 0 rgba(0, 0, 0, 0.35)',
                     },
                     transitionProperty: {
                         'colors': 'color, background-color, border-color, text-decoration-color, fill, stroke',
+                        'all': 'all',
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-in-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
                     }
                 }
             }
@@ -35,19 +77,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-gray-100 dark:bg-dark-900 font-[Inter,sans-serif] transition-all duration-300 ease-in-out">
+<body class="bg-gray-50 dark:bg-apple-gray-950 font-[Inter,sans-serif] transition-all duration-300 ease-in-out min-h-screen">
 
     <div class="container mx-auto max-w-5xl p-4 sm:p-6 lg:p-8">
         
-        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-75 flex flex-col items-center justify-center z-50">
+        <div id="loading-overlay" class="fixed inset-0 bg-white/80 dark:bg-apple-gray-950/90 backdrop-blur-md flex flex-col items-center justify-center z-50">
             <div class="spinner"></div>
-            <p id="loading-text" class="mt-4 text-lg font-medium text-gray-700">Loading...</p>
+            <p id="loading-text" class="mt-4 text-lg font-medium text-gray-700 dark:text-gray-300">Loading...</p>
         </div>
 
-        <div id="app-header" class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800 dark:text-white">My Attendance Dashboard</h1>
-            <div class="flex items-center gap-4">
-                <button id="dark-mode-toggle" class="p-2 rounded-lg bg-gray-200 dark:bg-dark-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-dark-600 transition-colors duration-200">
+        <div id="app-header" class="flex justify-between items-center mb-8 bg-white/70 dark:bg-apple-gray-900/70 backdrop-blur-xl rounded-2xl p-6 shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50">
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">My Attendance Dashboard</h1>
+            <div class="flex items-center gap-3">
+                <button id="dark-mode-toggle" class="p-3 rounded-xl bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-600 dark:text-gray-400 hover:bg-gray-200/80 dark:hover:bg-apple-gray-700/80 hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-700/50">
                     <svg id="sun-icon" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m6.75-6.75l.707.707M6.343 6.343l.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
                     </svg>
@@ -55,7 +97,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                     </svg>
                 </button>
-                <button id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition-colors duration-300">Logout</button>
+                <button id="logout-button" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-apple dark:shadow-apple-dark transition-all duration-300 border border-red-400/20">Logout</button>
             </div>
         </div>
         
@@ -65,51 +107,51 @@
     </div>
     
     <!-- Modals -->
-    <div id="extra-day-modal" class="fixed inset-0 bg-gray-600 dark:bg-dark-900 bg-opacity-50 dark:bg-opacity-75 h-full w-full z-50 hidden items-center justify-center p-4">
-        <div class="bg-white dark:bg-dark-800 p-8 rounded-xl shadow-lg w-full max-w-md transition-all duration-300">
+    <div id="extra-day-modal" class="fixed inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm h-full w-full z-50 flex items-center justify-center p-4" style="display:none;">
+        <div class="bg-white/95 dark:bg-apple-gray-900/95 backdrop-blur-xl p-8 rounded-2xl shadow-apple-lg dark:shadow-apple-dark-lg w-full max-w-md transition-all duration-300 border border-gray-200/50 dark:border-apple-gray-800/50 animate-slide-up">
             <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">Add Extra Working Day</h2>
             <form id="extra-day-form" class="space-y-4">
                 <div>
-                    <label for="extra-day-date" class="block text-sm font-medium text-gray-700">Select the extra working day:</label>
-                    <input type="date" id="extra-day-date" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                    <label for="extra-day-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select the extra working day:</label>
+                    <input type="date" id="extra-day-date" required class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                 </div>
                 <div>
-                    <label for="weekday-to-follow" class="block text-sm font-medium text-gray-700">Which weekday's schedule was followed?</label>
-                    <select id="weekday-to-follow" required class="mt-1 block w-full pl-3 pr-8 py-2 border border-gray-300 rounded-md shadow-sm">
+                    <label for="weekday-to-follow" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Which weekday's schedule was followed?</label>
+                    <select id="weekday-to-follow" required class="block w-full pl-4 pr-8 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                         <option value="">-- Please select --</option>
                         <option value="Monday">Monday</option><option value="Tuesday">Tuesday</option><option value="Wednesday">Wednesday</option><option value="Thursday">Thursday</option><option value="Friday">Friday</option>
                     </select>
                 </div>
                 <div class="flex justify-end gap-4 pt-4">
-                    <button type="button" class="modal-cancel-btn bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Cancel</button>
-                    <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg">Add Day</button>
+                    <button type="button" class="modal-cancel-btn bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-700 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-apple-gray-700/80 font-semibold py-2.5 px-5 rounded-xl transition-all duration-200 backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-700/50">Cancel</button>
+                    <button type="submit" class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-2.5 px-5 rounded-xl transition-all duration-200 shadow-apple dark:shadow-apple-dark border border-green-400/20">Add Day</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="custom-confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white dark:bg-dark-800 rounded-lg shadow-xl p-6 w-full max-w-sm transition-all duration-300">
-            <p id="confirm-modal-text" class="text-lg text-gray-800 mb-6">Are you sure?</p>
-            <div class="flex justify-end space-x-4">
-                <button id="confirm-no-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-semibold">Cancel</button>
-                <button id="confirm-yes-btn" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-semibold">Confirm</button>
+    <div id="custom-confirm-modal" class="fixed inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style="display:none;">
+        <div class="bg-white/95 dark:bg-apple-gray-900/95 backdrop-blur-xl rounded-2xl shadow-apple-lg dark:shadow-apple-dark-lg p-6 w-full max-w-sm transition-all duration-300 border border-gray-200/50 dark:border-apple-gray-800/50 animate-slide-up">
+            <p id="confirm-modal-text" class="text-lg text-gray-800 dark:text-gray-200 mb-6 font-medium">Are you sure?</p>
+            <div class="flex justify-end space-x-3">
+                <button id="confirm-no-btn" class="px-5 py-2.5 bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200/80 dark:hover:bg-apple-gray-700/80 font-semibold transition-all duration-200 backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-700/50">Cancel</button>
+                <button id="confirm-yes-btn" class="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold transition-all duration-200 shadow-apple dark:shadow-apple-dark border border-blue-400/20">Confirm</button>
             </div>
         </div>
     </div>
 
-    <div id="timetable-modal" class="fixed inset-0 bg-gray-600 dark:bg-dark-900 bg-opacity-50 dark:bg-opacity-75 h-full w-full z-50 hidden items-center justify-center p-4">
-        <div class="bg-white dark:bg-dark-800 p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto transition-all duration-300">
+    <div id="timetable-modal" class="fixed inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm h-full w-full z-50 flex items-center justify-center p-4" style="display:none;">
+        <div class="bg-white/95 dark:bg-apple-gray-900/95 backdrop-blur-xl p-8 rounded-2xl shadow-apple-lg dark:shadow-apple-dark-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto transition-all duration-300 border border-gray-200/50 dark:border-apple-gray-800/50 animate-slide-up">
             <h2 id="timetable-modal-title" class="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Add New Timetable</h2>
             <form id="timetable-form" class="space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label for="timetable-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Timetable Name:</label>
-                        <input type="text" id="timetable-name" name="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
+                        <label for="timetable-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Timetable Name:</label>
+                        <input type="text" id="timetable-name" name="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200 placeholder-gray-400 dark:placeholder-gray-500">
                     </div>
                     <div>
-                        <label for="timetable-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Timetable Type:</label>
-                        <select id="timetable-type" name="timetable-type" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
+                        <label for="timetable-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Timetable Type:</label>
+                        <select id="timetable-type" name="timetable-type" required class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                             <option value="normal">Normal</option>
                             <option value="special">Special</option>
                         </select>
@@ -118,53 +160,53 @@
                 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date:</label>
-                        <input type="date" id="timetable-start-date" name="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
+                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Start Date:</label>
+                        <input type="date" id="timetable-start-date" name="timetable-start-date" required class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                     </div>
                     <div>
-                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
-                        <input type="date" id="timetable-end-date" name="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
-                        <p id="end-date-help" class="text-xs text-gray-500 mt-1">Required for special timetables, optional for normal timetables (will use 2030-12-31 if not provided)</p>
+                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
+                        <input type="date" id="timetable-end-date" name="timetable-end-date" class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
+                        <p id="end-date-help" class="text-xs text-gray-500 dark:text-gray-400 mt-2">Required for special timetables, optional for normal timetables (will use 2030-12-31 if not provided)</p>
                     </div>
                     <div>
-                        <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Attendance %:</label>
-                        <input type="number" id="timetable-min-attendance" name="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
+                        <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Minimum Attendance %:</label>
+                        <input type="number" id="timetable-min-attendance" name="timetable-min-attendance" value="75" min="1" max="100" required class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                     </div>
                 </div>
                 
-                <div class="p-4 border rounded-lg">
-                    <h3 class="font-semibold text-lg mb-2">Step 1: Define Your Subjects</h3>
-                    <div class="flex items-end gap-2 mb-4">
+                <div class="p-6 bg-gray-50/50 dark:bg-apple-gray-850/50 border border-gray-200/50 dark:border-apple-gray-800/50 rounded-2xl backdrop-blur-sm">
+                    <h3 class="font-semibold text-lg mb-4 text-gray-800 dark:text-white">Step 1: Define Your Subjects</h3>
+                    <div class="flex items-end gap-3 mb-4">
                         <div class="flex-grow">
-                            <label for="timetable-subject-name" class="block text-sm font-medium text-gray-700">Subject Name</label>
-                            <input type="text" id="timetable-subject-name" name="timetable-subject-name" placeholder="e.g., Discrete Mathematics" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <label for="timetable-subject-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subject Name</label>
+                            <input type="text" id="timetable-subject-name" name="timetable-subject-name" placeholder="e.g., Discrete Mathematics" class="block w-full px-4 py-3 bg-white/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200 placeholder-gray-400 dark:placeholder-gray-500">
                         </div>
                         <div>
-                            <label for="timetable-subject-category" class="block text-sm font-medium text-gray-700">Category</label>
-                            <select id="timetable-subject-category" name="timetable-subject-category" class="mt-1 block w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <label for="timetable-subject-category" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category</label>
+                            <select id="timetable-subject-category" name="timetable-subject-category" class="block w-full pl-4 pr-8 py-3 bg-white/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                                 <option>Theory</option>
                                 <option>Lab</option>
                             </select>
                         </div>
                         <div>
-                            <label for="timetable-subject-weight" class="block text-sm font-medium text-gray-700">Weight</label>
-                            <input type="number" id="timetable-subject-weight" name="timetable-subject-weight" value="1" min="1" max="10" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm">
+                            <label for="timetable-subject-weight" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Weight</label>
+                            <input type="number" id="timetable-subject-weight" name="timetable-subject-weight" value="1" min="1" max="10" class="block w-full px-4 py-3 bg-white/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                         </div>
-                        <button type="button" id="timetable-add-subject-btn" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button>
+                        <button type="button" id="timetable-add-subject-btn" class="bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-800 hover:to-gray-900 dark:from-apple-gray-700 dark:to-apple-gray-800 dark:hover:from-apple-gray-600 dark:hover:to-apple-gray-700 text-white font-semibold py-3 px-5 rounded-xl transition-all duration-200 shadow-apple dark:shadow-apple-dark border border-gray-600/20 dark:border-apple-gray-600/20">Add</button>
                     </div>
                     <ul id="timetable-subject-master-list" class="space-y-2"></ul>
                 </div>
                 
-                <div class="p-4 border rounded-lg">
-                    <h3 class="font-semibold text-lg mb-4">Step 2: Build Your Weekly Schedule</h3>
+                <div class="p-6 bg-gray-50/50 dark:bg-apple-gray-850/50 border border-gray-200/50 dark:border-apple-gray-800/50 rounded-2xl backdrop-blur-sm">
+                    <h3 class="font-semibold text-lg mb-4 text-gray-800 dark:text-white">Step 2: Build Your Weekly Schedule</h3>
                     <div id="timetable-grid-container" class="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <!-- Timetable grid will be rendered here by app.js -->
                     </div>
                 </div>
                 
                 <div class="flex justify-end gap-4 pt-4">
-                    <button type="button" class="modal-cancel-btn bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Cancel</button>
-                    <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg">Save Timetable</button>
+                    <button type="button" class="modal-cancel-btn bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-700 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-apple-gray-700/80 font-semibold py-2.5 px-6 rounded-xl transition-all duration-200 backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-700/50">Cancel</button>
+                    <button type="submit" class="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-2.5 px-6 rounded-xl transition-all duration-200 shadow-apple dark:shadow-apple-dark border border-blue-400/20">Save Timetable</button>
                 </div>
             </form>
         </div>

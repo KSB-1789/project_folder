@@ -299,25 +299,25 @@ const AttendanceCalculator = {
 const Renderer = {
     renderDashboard() {
         dashboardView.innerHTML = `
-            <div id="attendance-summary" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg"></div>
-            <div id="actions-section" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg">
+            <div id="attendance-summary" class="bg-white/70 dark:bg-apple-gray-900/70 backdrop-blur-xl p-8 rounded-2xl shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50"></div>
+            <div id="actions-section" class="bg-white/70 dark:bg-apple-gray-900/70 backdrop-blur-xl p-8 rounded-2xl shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Mark Attendance</h2>
-                    <button id="show-extra-day-modal-btn" class="bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-semibold py-2 px-4 rounded-lg text-sm hover:bg-indigo-200 dark:hover:bg-indigo-800">Add Extra Day</button>
+                    <h2 class="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">Mark Attendance</h2>
+                    <button id="show-extra-day-modal-btn" class="bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-apple dark:shadow-apple-dark transition-all duration-200 border border-indigo-400/20">Add Extra Day</button>
                 </div>
                 <div class="date-selector mb-4">
-                    <label for="historical-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Date:</label>
-                    <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
+                    <label for="historical-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Date:</label>
+                    <input type="date" id="historical-date" class="block w-full px-4 py-3 bg-gray-50/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white backdrop-blur-sm transition-all duration-200">
                 </div>
                 <div id="daily-log-container"></div>
                 <div id="save-attendance-container" class="mt-4"></div>
             </div>
-            <div id="settings-section" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg">
-                <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-4">Settings</h2>
+            <div id="settings-section" class="bg-white/70 dark:bg-apple-gray-900/70 backdrop-blur-xl p-8 rounded-2xl shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50">
+                <h2 class="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent mb-6">Settings</h2>
                 <div class="space-y-6">
                     <div>
                         <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-3">Attendance Control</h3>
-                        <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-dark-700 rounded-lg">
+                        <div class="flex items-center justify-between p-6 bg-gray-50/80 dark:bg-apple-gray-850/80 rounded-2xl backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-800/50">
                             <div>
                                 <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Normal Timetable Attendance</p>
                                 <p class="text-xs text-gray-500 dark:text-gray-400">Pause normal timetable counting (special timetables continue)</p>
@@ -331,14 +331,14 @@ const Renderer = {
                         <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-3">Timetable Management</h3>
                         <div id="timetables-list" class="space-y-3 mb-4"></div>
                         <div class="flex gap-2">
-                            <button id="add-normal-timetable-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Add Normal Timetable</button>
-                            <button id="add-special-timetable-btn" class="flex-1 bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg">Add Special Timetable</button>
+                            <button id="add-normal-timetable-btn" class="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold py-3 px-4 rounded-xl shadow-apple dark:shadow-apple-dark transition-all duration-200 border border-green-400/20">Add Normal Timetable</button>
+                            <button id="add-special-timetable-btn" class="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-xl shadow-apple dark:shadow-apple-dark transition-all duration-200 border border-purple-400/20">Add Special Timetable</button>
                         </div>
                     </div>
                     <div>
                         <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Clear Attendance Records</p>
                         <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Resets all attendance records to default but keeps your timetables.</p>
-                        <button id="clear-attendance-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">Clear All Attendance</button>
+                        <button id="clear-attendance-btn" class="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-semibold py-3 px-4 rounded-xl shadow-apple dark:shadow-apple-dark transition-all duration-200 border border-orange-400/20">Clear All Attendance</button>
                     </div>
                 </div>
             </div>`;
@@ -570,7 +570,7 @@ const Renderer = {
         };
 
         return `
-            <div class="log-item flex items-center justify-between p-4 bg-white dark:bg-dark-800 rounded-lg shadow-sm border border-gray-200 dark:border-dark-700" data-log-id="${log.id}">
+            <div class="log-item flex items-center justify-between p-5 bg-white/80 dark:bg-apple-gray-850/80 rounded-2xl shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50 backdrop-blur-sm transition-all duration-200 hover:shadow-apple-lg dark:hover:shadow-apple-dark-lg" data-log-id="${log.id}">
                 <strong class="text-gray-800 dark:text-white">${log.subject_name} (${log.category})</strong>
                 <div class="log-actions flex flex-wrap gap-2 justify-end">
                     <button data-status="Attended" class="${getButtonClass('Attended')}">Attended</button>
@@ -584,7 +584,7 @@ const Renderer = {
     updateSaveButton() {
         const saveAttendanceContainerEl = document.getElementById('save-attendance-container');
         if (appState.pendingChanges.size > 0 && !saveAttendanceContainerEl.querySelector('button')) {
-            saveAttendanceContainerEl.innerHTML = `<button id="save-attendance-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">Save Changes</button>`;
+            saveAttendanceContainerEl.innerHTML = `<button id="save-attendance-btn" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-4 rounded-xl shadow-apple dark:shadow-apple-dark transition-all duration-200 border border-blue-400/20">Save Changes</button>`;
         } else if (appState.pendingChanges.size === 0) {
             saveAttendanceContainerEl.innerHTML = '';
         }
@@ -649,7 +649,7 @@ const Renderer = {
                 ? `<button data-id="${tt.id}" class="toggle-normal-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
                 : '';
             
-            return `<div class="p-4 bg-gray-50 dark:bg-dark-700 border border-gray-200 dark:border-dark-600 rounded-lg flex justify-between items-center">
+            return `<div class="p-5 bg-gray-50/80 dark:bg-apple-gray-850/80 border border-gray-200/50 dark:border-apple-gray-800/50 rounded-2xl flex justify-between items-center backdrop-blur-sm shadow-apple dark:shadow-apple-dark transition-all duration-200 hover:shadow-apple-lg dark:hover:shadow-apple-dark-lg">
                 <div>
                     <p class="font-bold text-gray-800 dark:text-white">${tt.name} ${typeBadge}${activeBadge}</p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">${tt.startDate} to ${tt.endDate}</p>
@@ -669,7 +669,7 @@ const Renderer = {
         const subjectList = document.getElementById('timetable-subject-master-list');
         const timetableGrid = document.getElementById('timetable-grid-container');
         subjectList.innerHTML = appState.setupSubjects.map((sub, index) => `
-            <li class="flex justify-between items-center bg-gray-100 p-2 rounded-md">
+            <li class="flex justify-between items-center bg-gray-100/80 dark:bg-apple-gray-800/80 p-3 rounded-xl backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-700/50">
                 <span>${sub.name} (${sub.category}) - Weight: ${sub.weight}</span>
                 <button type="button" data-index="${index}" class="remove-subject-btn text-red-500 hover:text-red-700 font-bold">X</button>
             </li>`).join('');
@@ -677,17 +677,17 @@ const Renderer = {
         timetableGrid.innerHTML = WEEKDAYS.map(day => {
             const schedule = appState.editingTimetable?.schedule?.[day] || [];
             return `
-                <div class="day-column bg-gray-50 p-3 rounded-lg">
+                <div class="day-column bg-gray-50/80 dark:bg-apple-gray-850/80 p-4 rounded-2xl backdrop-blur-sm border border-gray-200/50 dark:border-apple-gray-800/50">
                     <h4 class="font-bold mb-2 text-center">${day}</h4>
                     <div class="flex items-center gap-1 mb-2">
-                        <select data-day="${day}" class="add-class-select flex-grow w-full p-2 bg-white border border-gray-300 rounded-md">
+                        <select data-day="${day}" class="add-class-select flex-grow w-full p-3 bg-white/80 dark:bg-apple-gray-800/80 border border-gray-200/50 dark:border-apple-gray-700/50 rounded-xl backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 dark:text-white transition-all duration-200">
                             <option value="">-- select class --</option>
                             ${appState.setupSubjects.map(sub => `<option value="${sub.name} ${sub.category}">${sub.name} (${sub.category})</option>`).join('')}
                         </select>
                     </div>
                     <ul data-day="${day}" class="day-schedule-list space-y-1 min-h-[50px]">
                         ${schedule.map(cls => `
-                            <li class="flex justify-between items-center bg-blue-100 text-blue-800 text-sm font-medium px-2 py-1 rounded" data-value="${cls}">
+                            <li class="flex justify-between items-center bg-blue-100/80 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 text-sm font-medium px-3 py-2 rounded-xl backdrop-blur-sm border border-blue-200/50 dark:border-blue-800/50" data-value="${cls}">
                                 <span>${cls}</span>
                                 <button type="button" class="remove-class-btn text-blue-500 hover:text-blue-700 font-bold ml-2">x</button>
                             </li>`).join('')}
@@ -865,8 +865,8 @@ const TimetableManager = {
         const timetableType = formData.get('timetable-type') || 'normal';
         
         // Validate dates based on timetable type
-        const startDate = formData.get('timetable-start-date');
-        const endDate = formData.get('timetable-end-date');
+        let startDate = formData.get('timetable-start-date');
+        let endDate = formData.get('timetable-end-date');
         
         // Debug logging
         console.log('Form data debug:', {
@@ -970,7 +970,7 @@ const TimetableManager = {
 
     async toggleSpecialTimetable(timetableId) {
         const timetable = appState.userProfile.timetables.find(tt => tt.id === timetableId);
-        if (!timetable || (timetable.type !== 'special' && timetable.type !== undefined)) return;
+        if (!timetable || (timetable.type !== 'special' && timetable.type !== 'normal')) return;
         
         const wasActive = timetable.isActive;
         timetable.isActive = !wasActive;
