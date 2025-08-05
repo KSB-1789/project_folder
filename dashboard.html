@@ -24,6 +24,9 @@
                             800: '#1e293b',
                             900: '#0f172a',
                         }
+                    },
+                    transitionProperty: {
+                        'colors': 'color, background-color, border-color, text-decoration-color, fill, stroke',
                     }
                 }
             }
@@ -32,7 +35,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-gray-100 dark:bg-dark-900 font-[Inter,sans-serif] transition-colors duration-200">
+<body class="bg-gray-100 dark:bg-dark-900 font-[Inter,sans-serif] transition-all duration-300 ease-in-out">
 
     <div class="container mx-auto max-w-5xl p-4 sm:p-6 lg:p-8">
         
@@ -62,9 +65,9 @@
     </div>
     
     <!-- Modals -->
-    <div id="extra-day-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full z-50 hidden items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-            <h2 class="text-xl font-bold mb-4">Add Extra Working Day</h2>
+    <div id="extra-day-modal" class="fixed inset-0 bg-gray-600 dark:bg-dark-900 bg-opacity-50 dark:bg-opacity-75 h-full w-full z-50 hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-dark-800 p-8 rounded-xl shadow-lg w-full max-w-md transition-all duration-300">
+            <h2 class="text-xl font-bold mb-4 text-gray-800 dark:text-white">Add Extra Working Day</h2>
             <form id="extra-day-form" class="space-y-4">
                 <div>
                     <label for="extra-day-date" class="block text-sm font-medium text-gray-700">Select the extra working day:</label>
@@ -86,7 +89,7 @@
     </div>
 
     <div id="custom-confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+        <div class="bg-white dark:bg-dark-800 rounded-lg shadow-xl p-6 w-full max-w-sm transition-all duration-300">
             <p id="confirm-modal-text" class="text-lg text-gray-800 mb-6">Are you sure?</p>
             <div class="flex justify-end space-x-4">
                 <button id="confirm-no-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 font-semibold">Cancel</button>
@@ -95,18 +98,18 @@
         </div>
     </div>
 
-    <div id="timetable-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 h-full w-full z-50 hidden items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h2 id="timetable-modal-title" class="text-2xl font-bold mb-6">Add New Timetable</h2>
+    <div id="timetable-modal" class="fixed inset-0 bg-gray-600 dark:bg-dark-900 bg-opacity-50 dark:bg-opacity-75 h-full w-full z-50 hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-dark-800 p-8 rounded-xl shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto transition-all duration-300">
+            <h2 id="timetable-modal-title" class="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Add New Timetable</h2>
             <form id="timetable-form" class="space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label for="timetable-name" class="block text-sm font-medium text-gray-700">Timetable Name:</label>
-                        <input type="text" id="timetable-name" name="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Timetable Name:</label>
+                        <input type="text" id="timetable-name" name="timetable-name" required placeholder="e.g., Regular Semester, Exam Schedule" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                     </div>
                     <div>
-                        <label for="timetable-type" class="block text-sm font-medium text-gray-700">Timetable Type:</label>
-                        <select id="timetable-type" name="timetable-type" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-type" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Timetable Type:</label>
+                        <select id="timetable-type" name="timetable-type" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                             <option value="normal">Normal</option>
                             <option value="special">Special</option>
                         </select>
@@ -115,17 +118,17 @@
                 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700">Start Date:</label>
-                        <input type="date" id="timetable-start-date" name="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-start-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date:</label>
+                        <input type="date" id="timetable-start-date" name="timetable-start-date" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                     </div>
                     <div>
-                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
-                        <input type="date" id="timetable-end-date" name="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-end-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">End Date: <span id="end-date-required" class="text-red-500">*</span></label>
+                        <input type="date" id="timetable-end-date" name="timetable-end-date" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                         <p id="end-date-help" class="text-xs text-gray-500 mt-1">Required for special timetables, optional for normal timetables (will use 2030-12-31 if not provided)</p>
                     </div>
                     <div>
-                        <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700">Minimum Attendance %:</label>
-                        <input type="number" id="timetable-min-attendance" name="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <label for="timetable-min-attendance" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Minimum Attendance %:</label>
+                        <input type="number" id="timetable-min-attendance" name="timetable-min-attendance" value="75" min="1" max="100" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                     </div>
                 </div>
                 

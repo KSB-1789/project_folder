@@ -561,12 +561,12 @@ const Renderer = {
     renderLectureItem(log) {
         const currentStatus = appState.pendingChanges.get(log.id) || log.status;
         const getButtonClass = (btnStatus) => {
-            const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors';
+            const baseClass = 'log-btn px-3 py-1 text-sm font-medium rounded-md transition-colors cursor-pointer';
             const activeClasses = {
                 'Attended': 'bg-green-500 text-white', 'Missed': 'bg-red-500 text-white',
                 'Cancelled': 'bg-yellow-500 text-white', 'Not Held Yet': 'bg-gray-400 text-white'
             };
-            return currentStatus === btnStatus ? `${baseClass} ${activeClasses[btnStatus]}` : `${baseClass} bg-gray-200 text-gray-700 hover:bg-gray-300`;
+            return currentStatus === btnStatus ? `${baseClass} ${activeClasses[btnStatus]}` : `${baseClass} bg-gray-200 dark:bg-dark-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-dark-500`;
         };
 
         return `
@@ -1248,6 +1248,7 @@ const initializeEventListeners = () => {
                 const newStatus = logActionBtn.dataset.status;
                 appState.pendingChanges.set(logId, newStatus);
                 Renderer.renderDailyLog(document.getElementById('historical-date').value);
+                Renderer.updateSaveButton();
             }
             if (saveAttendanceBtn) {
                 await DataManager.saveAttendanceChanges();
