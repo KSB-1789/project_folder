@@ -299,28 +299,28 @@ const AttendanceCalculator = {
 const Renderer = {
     renderDashboard() {
         dashboardView.innerHTML = `
-            <div id="attendance-summary" class="bg-white p-6 rounded-xl shadow-lg"></div>
-            <div id="actions-section" class="bg-white p-6 rounded-xl shadow-lg">
+            <div id="attendance-summary" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg"></div>
+            <div id="actions-section" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800">Mark Attendance</h2>
-                    <button id="show-extra-day-modal-btn" class="bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg text-sm hover:bg-indigo-200">Add Extra Day</button>
+                    <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Mark Attendance</h2>
+                    <button id="show-extra-day-modal-btn" class="bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-semibold py-2 px-4 rounded-lg text-sm hover:bg-indigo-200 dark:hover:bg-indigo-800">Add Extra Day</button>
                 </div>
                 <div class="date-selector mb-4">
-                    <label for="historical-date" class="block text-sm font-medium text-gray-700">Select Date:</label>
-                    <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    <label for="historical-date" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Date:</label>
+                    <input type="date" id="historical-date" class="mt-1 block w-full px-3 py-2 bg-white dark:bg-dark-700 border border-gray-300 dark:border-dark-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:text-white">
                 </div>
                 <div id="daily-log-container"></div>
                 <div id="save-attendance-container" class="mt-4"></div>
             </div>
-            <div id="settings-section" class="bg-white p-6 rounded-xl shadow-lg">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Settings</h2>
+            <div id="settings-section" class="bg-white dark:bg-dark-800 p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-4">Settings</h2>
                 <div class="space-y-6">
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-800 mb-3">Attendance Control</h3>
-                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-3">Attendance Control</h3>
+                        <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-dark-700 rounded-lg">
                             <div>
-                                <p class="text-sm font-medium text-gray-700">Normal Timetable Attendance</p>
-                                <p class="text-xs text-gray-500">Pause normal timetable counting (special timetables continue)</p>
+                                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Normal Timetable Attendance</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Pause normal timetable counting (special timetables continue)</p>
                             </div>
                             <button id="toggle-attendance-btn" class="px-4 py-2 rounded-lg font-semibold transition-colors">
                                 ${appState.isAttendancePaused() ? 'Resume Normal' : 'Pause Normal'}
@@ -328,7 +328,7 @@ const Renderer = {
                         </div>
                     </div>
                     <div>
-                        <h3 class="text-lg font-semibold text-gray-800 mb-3">Timetable Management</h3>
+                        <h3 class="text-lg font-semibold text-gray-800 dark:text-white mb-3">Timetable Management</h3>
                         <div id="timetables-list" class="space-y-3 mb-4"></div>
                         <div class="flex gap-2">
                             <button id="add-normal-timetable-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg">Add Normal Timetable</button>
@@ -336,8 +336,8 @@ const Renderer = {
                         </div>
                     </div>
                     <div>
-                        <p class="text-sm font-medium text-gray-700">Clear Attendance Records</p>
-                        <p class="text-xs text-gray-500 mb-2">Resets all attendance records to default but keeps your timetables.</p>
+                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">Clear Attendance Records</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Resets all attendance records to default but keeps your timetables.</p>
                         <button id="clear-attendance-btn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg">Clear All Attendance</button>
                     </div>
                 </div>
@@ -491,15 +491,70 @@ const Renderer = {
             historicalDateInput.value = dateStr;
         }
         const dailyLogContainerEl = document.getElementById('daily-log-container');
-        const lecturesOnDate = appState.attendanceLog.filter(log => log.date === dateStr);
         
-        if (lecturesOnDate.length === 0) {
-            dailyLogContainerEl.innerHTML = `<p class="text-center text-gray-500 py-4">No classes scheduled for this day.</p>`;
-        } else {
-            dailyLogContainerEl.innerHTML = `<div class="space-y-4">${lecturesOnDate
-                .sort((a,b) => `${a.subject_name} ${a.category}`.localeCompare(`${b.subject_name} ${b.category}`))
-                .map(log => this.renderLectureItem(log)).join('')}</div>`;
+        // Get the active timetable for this date
+        const activeTimetable = appState.getActiveTimetable(new Date(dateStr));
+        const dayName = WEEKDAYS[new Date(dateStr).getDay() - 1];
+        
+        if (!activeTimetable) {
+            dailyLogContainerEl.innerHTML = `
+                <div class="text-center py-8">
+                    <p class="text-gray-500 mb-2">No active timetable for this date.</p>
+                    <p class="text-sm text-gray-400">Please create or activate a timetable in Settings.</p>
+                </div>`;
+            return;
         }
+        
+        // Get scheduled classes for this day
+        const scheduledClasses = activeTimetable.schedule[dayName] || [];
+        
+        if (scheduledClasses.length === 0) {
+            dailyLogContainerEl.innerHTML = `
+                <div class="text-center py-8">
+                    <p class="text-gray-500 mb-2">No classes scheduled for ${dayName}.</p>
+                    <p class="text-sm text-gray-400">Edit your timetable to add classes for this day.</p>
+                </div>`;
+            return;
+        }
+        
+        // Get existing attendance logs for this date
+        const existingLogs = appState.attendanceLog.filter(log => log.date === dateStr);
+        
+        // Create attendance entries for all scheduled classes
+        const allClasses = scheduledClasses.map(subjectString => {
+            const parts = subjectString.split(' ');
+            const category = parts.pop();
+            const subject_name = parts.join(' ');
+            
+            // Find existing log or create new one
+            const existingLog = existingLogs.find(log => 
+                log.subject_name === subject_name && log.category === category
+            );
+            
+            if (existingLog) {
+                return existingLog;
+            } else {
+                // Create new attendance log entry
+                const newLog = {
+                    id: Date.now() + Math.random(), // Temporary ID
+                    user_id: appState.currentUser.id,
+                    date: dateStr,
+                    subject_name,
+                    category,
+                    status: 'Not Held Yet'
+                };
+                return newLog;
+            }
+        });
+        
+        // Render the attendance marking interface
+        dailyLogContainerEl.innerHTML = `
+            <div class="space-y-4">
+                ${allClasses
+                    .sort((a,b) => `${a.subject_name} ${a.category}`.localeCompare(`${b.subject_name} ${b.category}`))
+                    .map(log => this.renderLectureItem(log)).join('')}
+            </div>`;
+        
         this.updateSaveButton();
     },
 
@@ -515,8 +570,8 @@ const Renderer = {
         };
 
         return `
-            <div class="log-item flex items-center justify-between p-4 bg-white rounded-lg shadow-sm" data-log-id="${log.id}">
-                <strong class="text-gray-800">${log.subject_name} (${log.category})</strong>
+            <div class="log-item flex items-center justify-between p-4 bg-white dark:bg-dark-800 rounded-lg shadow-sm border border-gray-200 dark:border-dark-700" data-log-id="${log.id}">
+                <strong class="text-gray-800 dark:text-white">${log.subject_name} (${log.category})</strong>
                 <div class="log-actions flex flex-wrap gap-2 justify-end">
                     <button data-status="Attended" class="${getButtonClass('Attended')}">Attended</button>
                     <button data-status="Missed" class="${getButtonClass('Missed')}">Missed</button>
@@ -540,16 +595,43 @@ const Renderer = {
         const activeTimetable = appState.getActiveTimetable();
         const timetablesListContainerEl = document.getElementById('timetables-list');
         
-        // Update attendance toggle button
+        // Update attendance toggle button - only show if manual control is needed
         const toggleBtn = document.getElementById('toggle-attendance-btn');
+        const activeTimetable = appState.getActiveTimetable();
+        const hasActiveSpecial = appState.userProfile.timetables?.some(tt => 
+            (tt.type === 'special' || tt.type === undefined) && tt.isActive
+        );
+        
         if (toggleBtn) {
-            toggleBtn.textContent = appState.isAttendancePaused() ? 'Resume Normal' : 'Pause Normal';
-            toggleBtn.className = appState.isAttendancePaused() 
-                ? 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-colors'
-                : 'px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors';
+            // Hide manual toggle if automation is in effect
+            if (hasActiveSpecial) {
+                toggleBtn.style.display = 'none';
+            } else {
+                toggleBtn.style.display = 'block';
+                toggleBtn.textContent = appState.isAttendancePaused() ? 'Resume Normal' : 'Pause Normal';
+                toggleBtn.className = appState.isAttendancePaused() 
+                    ? 'px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold transition-colors'
+                    : 'px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors';
+            }
         }
         
-        timetablesListContainerEl.innerHTML = timetables.map(tt => {
+        // Add status indicator at the top
+        const statusIndicator = activeTimetable ? `
+            <div class="mb-4 p-3 rounded-lg ${activeTimetable.type === 'special' ? 'bg-purple-50 border border-purple-200' : 'bg-blue-50 border border-blue-200'}">
+                <p class="text-sm font-medium ${activeTimetable.type === 'special' ? 'text-purple-800' : 'text-blue-800'}">
+                    Active Timetable: ${activeTimetable.name}
+                    ${activeTimetable.type === 'special' ? 
+                        '<span class="ml-2 text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">Special</span>' :
+                        '<span class="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Normal</span>'
+                    }
+                </p>
+                ${appState.isAttendancePaused() && activeTimetable.type === 'normal' ? 
+                    '<p class="text-xs text-gray-600 mt-1">Normal timetable paused automatically due to active special timetable.</p>' : ''
+                }
+            </div>
+        ` : '';
+        
+        timetablesListContainerEl.innerHTML = statusIndicator + timetables.map(tt => {
             const isActive = activeTimetable && tt.id === activeTimetable.id;
             const timetableType = tt.type || 'normal';
             const typeBadge = timetableType === 'special' 
@@ -568,10 +650,10 @@ const Renderer = {
                 ? `<button data-id="${tt.id}" class="toggle-normal-btn ${tt.isActive ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'} text-white px-3 py-1 rounded-md text-sm">${tt.isActive ? 'Deactivate' : 'Activate'}</button>`
                 : '';
             
-            return `<div class="p-4 bg-gray-50 border rounded-lg flex justify-between items-center">
+            return `<div class="p-4 bg-gray-50 dark:bg-dark-700 border border-gray-200 dark:border-dark-600 rounded-lg flex justify-between items-center">
                 <div>
-                    <p class="font-bold text-gray-800">${tt.name} ${typeBadge}${activeBadge}</p>
-                    <p class="text-sm text-gray-600">${tt.startDate} to ${tt.endDate}</p>
+                    <p class="font-bold text-gray-800 dark:text-white">${tt.name} ${typeBadge}${activeBadge}</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">${tt.startDate} to ${tt.endDate}</p>
                 </div>
                 <div class="flex gap-2">
                     ${specialControls}
@@ -1099,6 +1181,22 @@ const runFullAttendanceUpdate = async () => {
 
 // --- Event Listeners ---
 const initializeEventListeners = () => {
+    // Dark mode toggle
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    if (darkModeToggle) {
+        // Check for saved theme preference or default to light mode
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+        
+        darkModeToggle.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+    }
+    
     if (logoutButton) {
         logoutButton.addEventListener('click', () => supabase.auth.signOut().then(() => window.location.href = '/index.html'));
     }
