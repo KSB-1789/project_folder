@@ -590,7 +590,12 @@ async function getAttendanceData() {
                 return;
             }
 
+            // Only count records that are actually scheduled on that date under the active timetable
             const fullSubjectName = `${record.subject_name} ${record.category}`;
+            const dayName = new Date(record.date).toLocaleDateString('en-US', { weekday: 'long' });
+            const isScheduled = !!(timetableForDate && timetableForDate.schedule && Array.isArray(timetableForDate.schedule[dayName]) && timetableForDate.schedule[dayName].includes(fullSubjectName));
+            if (!isScheduled) return;
+
             const weight = timetableForDate && timetableForDate.subjectWeights
                 ? (timetableForDate.subjectWeights[fullSubjectName] || 1)
                 : 1;
@@ -607,9 +612,20 @@ async function getAttendanceData() {
             }
         });
 
-        return Object.values(attendanceMap).map(item => ({
+        // Aggregate Theory/Lab under the same base subject name
+        const aggregated = {};
+        Object.entries(attendanceMap).forEach(([fullName, item]) => {
+            const lastSpace = fullName.lastIndexOf(' ');
+            const baseName = lastSpace === -1 ? fullName : fullName.slice(0, lastSpace);
+            if (!aggregated[baseName]) {
+                aggregated[baseName] = { attended: 0, held: 0, subject: baseName };
+            }
+            aggregated[baseName].attended += item.attended;
+            aggregated[baseName].held += item.held;
+        });
+
+        return Object.values(aggregated).map(item => ({
             ...item,
-            // Cast to integers for display consistency
             attended: Math.round(item.attended),
             held: Math.round(item.held),
             percentage: item.held > 0 ? (item.attended / item.held) * 100 : 0
@@ -622,7 +638,7 @@ async function getAttendanceData() {
 }
 
 // Auto backfill attendance logs based on timetable
-async function backfillAttendanceLogs() {
+async function backfillAttendanceLogs(fromDateStr = null, toDateStr = null) {
     try {
         if (!userProfile || !Array.isArray(userProfile.timetables) || userProfile.timetables.length === 0) return;
 
@@ -634,11 +650,16 @@ async function backfillAttendanceLogs() {
 
         if (!earliestStart) return;
 
-        const startDate = userProfile.last_log_date ? new Date(userProfile.last_log_date) : earliestStart;
-        // Continue from next day after last_log_date
-        if (userProfile.last_log_date) startDate.setDate(startDate.getDate() + 1);
-
-        const endDate = new Date(today);
+        let startDate;
+        let endDate;
+        if (fromDateStr && toDateStr) {
+            startDate = new Date(fromDateStr);
+            endDate = new Date(toDateStr);
+        } else {
+            startDate = userProfile.last_log_date ? new Date(userProfile.last_log_date) : earliestStart;
+            if (userProfile.last_log_date) startDate.setDate(startDate.getDate() + 1);
+            endDate = new Date(today);
+        }
 
         // Nothing to backfill
         if (startDate > endDate) return;
@@ -677,14 +698,15 @@ async function backfillAttendanceLogs() {
             }
         }
 
-        // Update last_log_date to endDate
-        const { error: profileErr } = await supabase
-            .from('profiles')
-            .update({ last_log_date: endDate.toISOString().split('T')[0] })
-            .eq('id', currentUser.id);
-        if (profileErr) throw profileErr;
-
-        userProfile.last_log_date = endDate.toISOString().split('T')[0];
+        if (!fromDateStr || !toDateStr) {
+            // Only bump last_log_date for auto runs
+            const { error: profileErr } = await supabase
+                .from('profiles')
+                .update({ last_log_date: endDate.toISOString().split('T')[0] })
+                .eq('id', currentUser.id);
+            if (profileErr) throw profileErr;
+            userProfile.last_log_date = endDate.toISOString().split('T')[0];
+        }
     } catch (error) {
         console.error('Backfill error:', error);
         // Non-fatal
@@ -926,11 +948,14 @@ async function saveTimetable(subjects) {
             .eq('id', currentUser.id);
         
         if (error) throw error;
-        
-    closeAllModals();
-    editingTimetableId = null;
-    await renderDashboard();
-    showSuccess('Timetable saved successfully!');
+
+        // Recompute future auto logs across the timetable's date range to align overall held counts
+        await backfillAttendanceLogs(startDate, endDate);
+
+        closeAllModals();
+        editingTimetableId = null;
+        await renderDashboard();
+        showSuccess('Timetable saved successfully!');
         
     } catch (error) {
         console.error('Save timetable error:', error);
