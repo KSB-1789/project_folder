@@ -203,21 +203,17 @@ async function renderMainDashboard() {
         
         <!-- Main Content -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-            <!-- Attendance Tracker -->
-            <div class="lg:col-span-2">
+            <!-- Left Column: Tracker + Settings -->
+            <div class="lg:col-span-2 space-y-6">
                 ${await renderAttendanceTracker(activeTimetable)}
+                ${renderSettings()}
             </div>
-            
-            <!-- Sidebar -->
-            <div class="space-y-6">
+
+            <!-- Right Column: Sidebar -->
+            <div class="space-y-6 lg:sticky lg:top-6 self-start">
                 ${renderAttendanceSummary(attendanceData)}
                 ${renderQuickActions()}
             </div>
-        </div>
-        
-        <!-- Settings Section -->
-        <div class="mt-8">
-            ${renderSettings()}
         </div>
     `;
     
@@ -783,6 +779,7 @@ function openTimetableModal(timetableId = null) {
         setupTimetableModal({ subjects: [], schedule: {} });
     }
     modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
 }
 
 function setupTimetableModal(initialData = { subjects: [], schedule: {} }) {
@@ -1070,6 +1067,7 @@ async function updateAttendanceThreshold() {
 // Extra day modal functions
 function openExtraDayModal() {
     document.getElementById('extra-day-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
 }
 
 async function saveExtraWorkingDay() {
@@ -1136,6 +1134,7 @@ function openAssistant() {
     if (!activeTimetable) {
         content.innerHTML = '<p class="text-gray-700 dark:text-gray-300">No active timetable for today.</p>';
         assistantModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
         return;
     }
 
@@ -1144,6 +1143,7 @@ function openAssistant() {
         if (summary.length === 0) {
             content.innerHTML = '<p class="text-gray-700 dark:text-gray-300">No attendance data yet. Start marking today to get guidance.</p>';
             assistantModal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
             return;
         }
 
@@ -1206,9 +1206,11 @@ function openAssistant() {
 
         content.innerHTML = lines || '<p class="text-gray-700 dark:text-gray-300">No guidance available.</p>';
         assistantModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
     }).catch(() => {
         content.innerHTML = '<p class="text-gray-700 dark:text-gray-300">Failed to load guidance.</p>';
         assistantModal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
     });
 }
 
@@ -1217,6 +1219,7 @@ function closeAllModals() {
     document.querySelectorAll('[id$="-modal"]').forEach(modal => {
         modal.style.display = 'none';
     });
+    document.body.style.overflow = '';
 }
 
 function showLoading(text = 'Loading...') {
