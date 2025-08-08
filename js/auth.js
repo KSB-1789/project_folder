@@ -6,7 +6,7 @@ import { supabase } from './supabaseClient.js';
         if (error) {
             console.error('Session check error:', error);
         } else if (session) {
-            window.location.href = '/dashboard.html';
+            window.location.href = 'dashboard.html';
         }
     } catch (error) {
         console.error('Failed to check session:', error);
@@ -52,7 +52,7 @@ loginForm.addEventListener('submit', async (e) => {
         if (error) { 
             authError.textContent = error.message; 
         } else { 
-            window.location.href = '/dashboard.html'; 
+            window.location.href = 'dashboard.html'; 
         }
     } catch (error) {
         console.error('Login error:', error);
@@ -86,7 +86,7 @@ signupForm.addEventListener('submit', async (e) => {
             if (signInError) {
                 authError.textContent = signInError.message;
             } else {
-                window.location.href = '/dashboard.html';
+                window.location.href = 'dashboard.html';
             }
         }
     } catch (error) {
