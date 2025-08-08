@@ -572,10 +572,13 @@ async function getTodaysAttendance(date) {
 
 async function getAttendanceData() {
     try {
+        const { startDate, endDate } = getAttendanceDateBounds();
         const { data, error } = await supabase
             .from('attendance_log')
-            .select('*')
-            .eq('user_id', currentUser.id);
+            .select('date,subject_name,category,status')
+            .eq('user_id', currentUser.id)
+            .gte('date', startDate)
+            .lte('date', endDate);
 
         if (error) throw error;
 
@@ -993,6 +996,7 @@ async function deleteTimetable(timetableId) {
 
 async function toggleTimetableActive(timetableId) {
     try {
+        showLoading('Updating timetable state...');
         const timetable = userProfile.timetables.find(t => t.id === timetableId);
         if (!timetable) return;
         
@@ -1005,12 +1009,15 @@ async function toggleTimetableActive(timetableId) {
         
         if (error) throw error;
         
+        // Quickly refresh summary with bounded fetch and avoid full rerender lag
         await renderDashboard();
         showSuccess(`Timetable ${timetable.isActive ? 'activated' : 'deactivated'} successfully!`);
         
     } catch (error) {
         console.error('Toggle timetable error:', error);
         showError('Failed to toggle timetable: ' + error.message);
+    } finally {
+        hideLoading();
     }
 }
 
@@ -1233,6 +1240,35 @@ function splitSubjectAndCategory(subject) {
     return {
         subjectName: lastSpaceIndex === -1 ? subject : subject.slice(0, lastSpaceIndex),
         category: lastSpaceIndex === -1 ? '' : subject.slice(lastSpaceIndex + 1)
+    };
+}
+
+function getAttendanceDateBounds() {
+    const today = new Date();
+    const LOOKBACK_DAYS = 366; // cap fetch window to improve performance
+    let earliest = null;
+    let latest = today;
+
+    if (userProfile && Array.isArray(userProfile.timetables) && userProfile.timetables.length > 0) {
+        for (const t of userProfile.timetables) {
+            const s = new Date(t.startDate);
+            if (!isNaN(s)) {
+                if (earliest === null || s < earliest) earliest = s;
+            }
+            const e = new Date(t.endDate || '2030-12-31');
+            if (!isNaN(e) && e > latest) latest = e;
+        }
+    }
+
+    // Apply lookback cap
+    const capStart = new Date(today);
+    capStart.setDate(capStart.getDate() - LOOKBACK_DAYS);
+    const start = earliest ? new Date(Math.max(earliest, capStart)) : capStart;
+    const end = latest < today ? latest : today;
+
+    return {
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0]
     };
 }
 
