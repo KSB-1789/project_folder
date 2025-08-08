@@ -438,14 +438,14 @@ function renderSettings() {
                 
                 <div>
                     <h4 class="font-semibold text-gray-800 dark:text-white mb-3">Timetable Management</h4>
-                    <div class="space-y-2 max-h-48 overflow-y-auto">
+                    <div class="space-y-3">
                         ${userProfile.timetables.map(timetable => `
-                            <div class="flex items-center justify-between p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg">
-                                <div class="flex-grow min-w-0">
-                                    <h5 class="font-medium text-gray-800 dark:text-white text-sm truncate">${timetable.name}</h5>
-                                    <p class="text-xs text-gray-600 dark:text-gray-400">${timetable.type || 'normal'} • ${timetable.startDate} to ${timetable.endDate}</p>
+                            <div class="flex items-start justify-between p-4 bg-gray-50/60 dark:bg-apple-gray-850/60 rounded-xl border border-gray-200/40 dark:border-apple-gray-800/40">
+                                <div class="flex-grow min-w-0 pr-3">
+                                    <h5 class="font-semibold text-gray-800 dark:text-white text-sm sm:text-base truncate">${timetable.name}</h5>
+                                    <p class="mt-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400">${timetable.type || 'normal'} • ${timetable.startDate} to ${timetable.endDate}</p>
                                 </div>
-                                <div class="flex gap-1">
+                                <div class="flex gap-2 flex-wrap justify-end">
                                     <button onclick="openTimetableModal('${timetable.id}')" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
                                         Edit
                                     </button>
