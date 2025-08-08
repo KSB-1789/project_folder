@@ -449,6 +449,9 @@ function renderSettings() {
                                     <p class="text-xs text-gray-600 dark:text-gray-400">${timetable.type || 'normal'} • ${timetable.startDate} to ${timetable.endDate}</p>
                                 </div>
                                 <div class="flex gap-1">
+                                    <button onclick="openTimetableModal('${timetable.id}')" class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                                        Edit
+                                    </button>
                                     ${timetable.type === 'special' ? `
                                         <button onclick="toggleTimetableActive('${timetable.id}')" class="px-2 py-1 text-xs rounded ${timetable.isActive ? 'bg-green-500 text-white' : 'bg-gray-300 dark:bg-apple-gray-700 text-gray-700 dark:text-gray-300'}">
                                             ${timetable.isActive ? 'Active' : 'Inactive'}
@@ -1077,17 +1080,41 @@ function openAssistant() {
             return;
         }
 
+        const t = userProfile.attendance_threshold / 100;
         const lines = summary.map(item => {
-            const need = Math.max(0, Math.ceil((userProfile.attendance_threshold / 100 * item.held - item.attended)));
-            const canMiss = Math.max(0, Math.floor((item.attended - userProfile.attendance_threshold / 100 * item.held) / (1 - userProfile.attendance_threshold / 100)));
+            const subject = item.subject; // "Name Category"
+            const remaining = countRemainingWeighted(subject, currentDate);
+            const A = item.attended; // weighted so far
+            const H = item.held;     // weighted so far
+            const R = remaining.totalWeighted;
+
+            // Minimum weighted units to attend from remaining to reach threshold
+            const needWeighted = Math.max(0, Math.ceil(t * (H + R) - A));
+
+            // Maximum weighted units you can miss and still stay >= threshold
+            const maxMissWeighted = Math.max(0, Math.floor(Math.min(
+                R,
+                (A - t * H) + (1 - t) * R
+            )));
+
+            // Approximate sessions using the typical weight for this subject on active timetable
+            const typicalWeight = remaining.typicalWeight || 1;
+            const needSessions = Math.ceil(needWeighted / typicalWeight);
+            const canMissSessions = Math.floor(maxMissWeighted / typicalWeight);
+
+            // If impossible to reach threshold even by attending all
+            const unreachable = needWeighted > R;
+
             return `
                 <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
                     <div class="flex items-center justify-between">
-                        <span class="font-medium text-gray-800 dark:text-white text-sm">${item.subject}</span>
+                        <span class="font-medium text-gray-800 dark:text-white text-sm">${subject}</span>
                         <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
                     </div>
-                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Attend at least <strong>${need}</strong> more weighted session(s) to reach ${userProfile.attendance_threshold}%.</p>
-                    <p class="text-xs text-gray-600 dark:text-gray-400">You can safely miss about <strong>${isFinite(canMiss) ? canMiss : 0}</strong> session(s) and remain at target.</p>
+                    ${unreachable
+                        ? `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Even if you attend all remaining (${R} weighted), you will not reach ${userProfile.attendance_threshold}%. Attend everything to maximize your percentage.</p>`
+                        : `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Attend at least <strong>${needWeighted}</strong> weighted (${needSessions} session${needSessions===1?'':'s'} approx) to reach ${userProfile.attendance_threshold}%.</p>`}
+                    <p class="text-xs text-gray-600 dark:text-gray-400">You can safely miss about <strong>${maxMissWeighted}</strong> weighted (${canMissSessions} session${canMissSessions===1?'':'s'} approx) and remain at target.</p>
                 </div>
             `;
         }).join('');
@@ -1120,14 +1147,12 @@ function hideLoading() {
 
 function showError(message) {
     console.error(message);
-    // You can implement a toast notification system here
-    alert('Error: ' + message);
+    showToast('Error', message, 'error');
 }
 
 function showSuccess(message) {
     console.log(message);
-    // You can implement a toast notification system here
-    alert('Success: ' + message);
+    showToast('Success', message, 'success');
 }
 
 // Make functions globally available
@@ -1149,4 +1174,72 @@ function splitSubjectAndCategory(subject) {
         subjectName: lastSpaceIndex === -1 ? subject : subject.slice(0, lastSpaceIndex),
         category: lastSpaceIndex === -1 ? '' : subject.slice(lastSpaceIndex + 1)
     };
+}
+
+// Toasts
+function showToast(title, message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const id = 't' + Math.random().toString(36).slice(2);
+    const base = document.createElement('div');
+    base.id = id;
+    base.className = `flex items-start gap-3 p-4 rounded-xl shadow-apple dark:shadow-apple-dark border animate-fade-in ${
+        type === 'success' ? 'bg-green-50/90 dark:bg-green-900/30 border-green-200/50 dark:border-green-800/50 text-green-800 dark:text-green-200' :
+        type === 'error' ? 'bg-red-50/90 dark:bg-red-900/30 border-red-200/50 dark:border-red-800/50 text-red-800 dark:text-red-200' :
+        'bg-gray-50/90 dark:bg-apple-gray-900/60 border-gray-200/50 dark:border-apple-gray-800/50 text-gray-800 dark:text-gray-200'
+    }`;
+
+    base.innerHTML = `
+        <div class="flex-1">
+            <p class="font-semibold">${title}</p>
+            <p class="text-sm opacity-90">${message}</p>
+        </div>
+        <button class="px-2 py-1 text-sm rounded-lg bg-black/5 dark:bg-white/10" aria-label="Close">✕</button>
+    `;
+
+    const remove = () => {
+        base.style.opacity = '0';
+        base.style.transform = 'translateY(4px)';
+        setTimeout(() => base.remove(), 200);
+    };
+    base.querySelector('button')?.addEventListener('click', remove);
+    container.appendChild(base);
+    setTimeout(remove, 3000);
+}
+
+// Compute remaining weighted units and a typical weight for a subject between currentDate and end-date of active timetables
+function countRemainingWeighted(subjectFullName, fromDateStr) {
+    const [subjectName, ...rest] = subjectFullName.split(' ');
+    const category = rest.join(' ');
+
+    let totalWeighted = 0;
+    const weights = [];
+
+    const fromDate = new Date(fromDateStr);
+    const horizon = new Date();
+    horizon.setMonth(horizon.getMonth() + 6); // 6 months lookahead max to avoid runaway
+
+    // Gather all future dates covered by any timetable for this subject
+    for (const timetable of userProfile.timetables || []) {
+        const start = new Date(timetable.startDate);
+        const end = new Date(timetable.endDate || '2030-12-31');
+        let d = new Date(Math.max(fromDate, start));
+
+        for (; d <= end && d <= horizon; d.setDate(d.getDate() + 1)) {
+            const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+            const list = (timetable.schedule && timetable.schedule[dayName]) || [];
+            for (const s of list) {
+                const { subjectName: n, category: c } = splitSubjectAndCategory(s);
+                if (n === subjectName && c === category) {
+                    const weight = (timetable.subjectWeights && timetable.subjectWeights[subjectFullName]) || 1;
+                    totalWeighted += weight;
+                    weights.push(weight);
+                }
+            }
+        }
+    }
+
+    const typicalWeight = weights.length > 0 ? Math.round(weights.reduce((a, b) => a + b, 0) / weights.length) : 1;
+    return { totalWeighted, typicalWeight };
 }
