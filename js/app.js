@@ -5,6 +5,7 @@ let currentUser = null;
 let userProfile = null;
 let currentDate = new Date().toISOString().split('T')[0];
 let isLoading = false;
+let editingTimetableId = null;
 
 // DOM elements
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -728,8 +729,8 @@ function openTimetableModal(timetableId = null) {
     const title = document.getElementById('timetable-modal-title');
     
     if (timetableId) {
+        editingTimetableId = timetableId;
         title.textContent = 'Edit Timetable';
-        // Load existing timetable data
         const timetable = userProfile.timetables.find(t => t.id === timetableId);
         if (timetable) {
             document.getElementById('timetable-name').value = timetable.name;
@@ -737,24 +738,35 @@ function openTimetableModal(timetableId = null) {
             document.getElementById('timetable-start-date').value = timetable.startDate;
             document.getElementById('timetable-end-date').value = timetable.endDate;
             document.getElementById('timetable-min-attendance').value = userProfile.attendance_threshold;
+
+            // Preload subjects and schedule
+            const initialSubjects = [];
+            const weights = timetable.subjectWeights || {};
+            Object.keys(weights).forEach(fullName => {
+                const { subjectName, category } = splitSubjectAndCategory(fullName);
+                initialSubjects.push({ name: subjectName, category, fullName, weight: weights[fullName] });
+            });
+            setupTimetableModal({ subjects: initialSubjects, schedule: timetable.schedule || {} });
+        } else {
+            setupTimetableModal({ subjects: [], schedule: {} });
         }
     } else {
+        editingTimetableId = null;
         title.textContent = 'Add New Timetable';
         form.reset();
         document.getElementById('timetable-min-attendance').value = userProfile.attendance_threshold;
+        setupTimetableModal({ subjects: [], schedule: {} });
     }
-    
-    setupTimetableModal();
     modal.style.display = 'flex';
 }
 
-function setupTimetableModal() {
+function setupTimetableModal(initialData = { subjects: [], schedule: {} }) {
     const form = document.getElementById('timetable-form');
     const addSubjectBtn = document.getElementById('timetable-add-subject-btn');
     const subjectMasterList = document.getElementById('timetable-subject-master-list');
     const gridContainer = document.getElementById('timetable-grid-container');
     
-    let subjects = [];
+    let subjects = [...(initialData.subjects || [])];
     
     // Add subject functionality
     addSubjectBtn.onclick = () => {
@@ -810,6 +822,22 @@ function setupTimetableModal() {
                 </select>
             </div>
         `).join('');
+
+        // Pre-fill from initial schedule if provided
+        const schedule = initialData.schedule || {};
+        Object.keys(schedule).forEach(day => {
+            const dayContainer = document.getElementById(`day-${day}`);
+            if (!dayContainer) return;
+            (schedule[day] || []).forEach(subjectName => {
+                const subjectDiv = document.createElement('div');
+                subjectDiv.className = 'flex items-center justify-between p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-sm';
+                subjectDiv.innerHTML = `
+                    <span class="text-gray-800 dark:text-white">${subjectName}</span>
+                    <button type="button" onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 text-xs">×</button>
+                `;
+                dayContainer.appendChild(subjectDiv);
+            });
+        });
     }
     
     // Make functions global for onclick handlers
@@ -869,18 +897,24 @@ async function saveTimetable(subjects) {
             subjectWeights[subject.fullName] = subject.weight;
         });
         
-        const newTimetable = {
-            id: crypto.randomUUID(),
-            name,
-            type,
-            startDate,
-            endDate,
-            schedule,
-            subjectWeights,
-            isActive: type === 'special' ? false : true
-        };
-        
+    const existing = editingTimetableId ? userProfile.timetables.find(t => t.id === editingTimetableId) : null;
+    const isActive = existing ? existing.isActive : (type === 'special' ? false : true);
+    const newTimetable = {
+        id: existing ? existing.id : crypto.randomUUID(),
+        name,
+        type,
+        startDate,
+        endDate,
+        schedule,
+        subjectWeights,
+        isActive
+    };
+    
+    if (existing) {
+        userProfile.timetables = userProfile.timetables.map(t => t.id === existing.id ? newTimetable : t);
+    } else {
         userProfile.timetables.push(newTimetable);
+    }
         userProfile.attendance_threshold = threshold;
         
         const { error } = await supabase
@@ -893,9 +927,10 @@ async function saveTimetable(subjects) {
         
         if (error) throw error;
         
-        closeAllModals();
-        await renderDashboard();
-        showSuccess('Timetable saved successfully!');
+    closeAllModals();
+    editingTimetableId = null;
+    await renderDashboard();
+    showSuccess('Timetable saved successfully!');
         
     } catch (error) {
         console.error('Save timetable error:', error);
