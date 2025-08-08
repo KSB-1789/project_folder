@@ -1139,7 +1139,7 @@ function openAssistant() {
         return;
     }
 
-    // Build a simple guidance list based on current summary
+    // Build guidance based on current aggregated summary (base subject names)
     getAttendanceData().then(summary => {
         if (summary.length === 0) {
             content.innerHTML = '<p class="text-gray-700 dark:text-gray-300">No attendance data yet. Start marking today to get guidance.</p>';
@@ -1149,41 +1149,59 @@ function openAssistant() {
 
         const t = userProfile.attendance_threshold / 100;
         const lines = summary.map(item => {
-            const subject = item.subject; // "Name Category"
-            const remaining = countRemainingWeighted(subject, currentDate);
+            const subjectBase = item.subject; // aggregated base subject name
+            const remaining = countRemainingWeighted(subjectBase, currentDate);
             const A = item.attended; // weighted so far
             const H = item.held;     // weighted so far
-            const R = remaining.totalWeighted;
+            const R = remaining.totalWeighted; // weighted remaining across all categories for this subject
+            const W = Math.max(1, remaining.typicalWeight || 1); // typical session weight
 
-            // Minimum weighted units to attend from remaining to reach threshold
-            const needWeighted = Math.max(0, Math.ceil(t * (H + R) - A));
+            if (H === 0 && R === 0) {
+                return `
+                    <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">No remaining classes scheduled.</p>
+                    </div>`;
+            }
 
-            // Maximum weighted units you can miss and still stay >= threshold
-            const maxMissWeighted = Math.max(0, Math.floor(Math.min(
-                R,
-                (A - t * H) + (1 - t) * R
-            )));
+            const below = item.percentage < userProfile.attendance_threshold;
 
-            // Approximate sessions using the typical weight for this subject on active timetable
-            const typicalWeight = remaining.typicalWeight || 1;
-            const needSessions = Math.ceil(needWeighted / typicalWeight);
-            const canMissSessions = Math.floor(maxMissWeighted / typicalWeight);
+            if (below) {
+                // Need enough buffer to reach threshold AND be able to miss at least one session of weight W afterwards.
+                const x1 = Math.max(0, (t * H - A) / (1 - t));
+                const x2 = Math.max(0, (t * (H + W) - A) / (1 - t));
+                const needWeighted = Math.ceil(Math.max(x1, x2));
+                const unreachable = needWeighted > R;
+                const needSessions = Math.ceil(needWeighted / W);
 
-            // If impossible to reach threshold even by attending all
-            const unreachable = needWeighted > R;
-
-            return `
-                <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
-                    <div class="flex items-center justify-between">
-                        <span class="font-medium text-gray-800 dark:text-white text-sm">${subject}</span>
-                        <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                return `
+                    <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                        </div>
+                        ${unreachable
+                            ? `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Even if you attend all remaining (${R} weighted), you cannot secure a 1-session buffer. Attend all to maximize your percentage.</p>`
+                            : `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Attend <strong>${needWeighted}</strong> weighted (~${needSessions} session${needSessions===1?'':'s'}) to cross ${userProfile.attendance_threshold}% and have buffer for 1 miss.</p>`}
                     </div>
-                    ${unreachable
-                        ? `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Even if you attend all remaining (${R} weighted), you will not reach ${userProfile.attendance_threshold}%. Attend everything to maximize your percentage.</p>`
-                        : `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Attend at least <strong>${needWeighted}</strong> weighted (${needSessions} session${needSessions===1?'':'s'} approx) to reach ${userProfile.attendance_threshold}%.</p>`}
-                    <p class="text-xs text-gray-600 dark:text-gray-400">You can safely miss about <strong>${maxMissWeighted}</strong> weighted (${canMissSessions} session${canMissSessions===1?'':'s'} approx) and remain at target.</p>
-                </div>
-            `;
+                `;
+            } else {
+                // How much can you miss and still remain >= threshold
+                const maxMissWeighted = Math.max(0, Math.floor(Math.min(R, (A / t) - H)));
+                const canMissSessions = Math.floor(maxMissWeighted / W);
+                return `
+                    <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                        </div>
+                        <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">You can safely miss <strong>${maxMissWeighted}</strong> weighted (~${canMissSessions} session${canMissSessions===1?'':'s'}) and stay at or above ${userProfile.attendance_threshold}%.</p>
+                    </div>
+                `;
+            }
         }).join('');
 
         content.innerHTML = lines || '<p class="text-gray-700 dark:text-gray-300">No guidance available.</p>';
@@ -1305,9 +1323,9 @@ function showToast(title, message, type = 'info') {
 }
 
 // Compute remaining weighted units and a typical weight for a subject between currentDate and end-date of active timetables
-function countRemainingWeighted(subjectFullName, fromDateStr) {
-    const [subjectName, ...rest] = subjectFullName.split(' ');
-    const category = rest.join(' ');
+function countRemainingWeighted(subjectBaseName, fromDateStr) {
+    // subjectBaseName is the aggregated base name (e.g., "DA"), so we include all categories whose base matches
+    const [subjectNameBase] = [subjectBaseName];
 
     let totalWeighted = 0;
     const weights = [];
@@ -1327,8 +1345,9 @@ function countRemainingWeighted(subjectFullName, fromDateStr) {
             const list = (timetable.schedule && timetable.schedule[dayName]) || [];
             for (const s of list) {
                 const { subjectName: n, category: c } = splitSubjectAndCategory(s);
-                if (n === subjectName && c === category) {
-                    const weight = (timetable.subjectWeights && timetable.subjectWeights[subjectFullName]) || 1;
+                if (n === subjectNameBase) {
+                    const full = `${n} ${c}`;
+                    const weight = (timetable.subjectWeights && timetable.subjectWeights[full]) || 1;
                     totalWeighted += weight;
                     weights.push(weight);
                 }
