@@ -374,20 +374,29 @@ function renderAttendanceSummary(attendanceData) {
             <div class="space-y-3">
                 ${attendanceData.length === 0 ? 
                     '<p class="text-gray-600 dark:text-gray-400 text-center py-4">No attendance data yet</p>' :
-                    attendanceData.map(item => `
-                        <div class="flex items-center justify-between p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-xl">
-                            <div class="flex-grow min-w-0">
-                                <h4 class="font-medium text-gray-800 dark:text-white text-sm truncate">${item.subject}</h4>
-                                <p class="text-xs text-gray-600 dark:text-gray-400">${item.attended}/${item.held} classes</p>
+                    attendanceData.map(item => {
+                        const key = encodeURIComponent(item.subject);
+                        return `
+                        <div class="bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-xl border border-transparent hover:border-gray-200/50 dark:hover:border-apple-gray-800/50 transition-colors">
+                            <button onclick="toggleSubjectDetails('${key}')" class="w-full flex items-center justify-between p-3">
+                                <div class="flex-grow min-w-0 text-left">
+                                    <h4 class="font-medium text-gray-800 dark:text-white text-sm truncate flex items-center gap-2">
+                                        <span>${item.subject}</span>
+                                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">${Math.round(item.attended)}/${Math.round(item.held)}</span>
+                                    </h4>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.percentage.toFixed(1)}%</span>
+                                    <button type="button" onclick="openSubjectModal('${key}')" class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">View</button>
+                                </div>
+                            </button>
+                            <div id="subject-details-${key}" class="hidden border-t border-gray-200/40 dark:border-apple-gray-800/40">
+                                <div class="max-h-56 overflow-y-auto p-3 space-y-2" id="subject-details-body-${key}">
+                                    <!-- rows injected on demand -->
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
-                                    ${item.percentage.toFixed(1)}%
-                                </span>
-                                <div class="w-2 h-2 rounded-full ${item.percentage >= userProfile.attendance_threshold ? 'bg-green-500' : 'bg-red-500'}"></div>
-                            </div>
-                        </div>
-                    `).join('')
+                        </div>`;
+                    }).join('')
                 }
             </div>
         </div>
@@ -1254,6 +1263,8 @@ window.toggleTimetableActive = toggleTimetableActive;
 window.toggleAttendancePause = toggleAttendancePause;
 window.updateAttendanceThreshold = updateAttendanceThreshold;
 window.saveExtraWorkingDay = saveExtraWorkingDay;
+window.toggleSubjectDetails = toggleSubjectDetails;
+window.openSubjectModal = openSubjectModal;
 
 // Helpers
 function splitSubjectAndCategory(subject) {
@@ -1291,6 +1302,136 @@ function getAttendanceDateBounds() {
         startDate: start.toISOString().split('T')[0],
         endDate: end.toISOString().split('T')[0]
     };
+}
+
+// Expandable subject rows: lazy-load detailed records
+async function toggleSubjectDetails(encodedSubject) {
+    const panel = document.getElementById(`subject-details-${encodedSubject}`);
+    const body = document.getElementById(`subject-details-body-${encodedSubject}`);
+    const chev = document.getElementById(`chev-${encodedSubject}`);
+    if (!panel || !body) return;
+
+    const isHidden = panel.classList.contains('hidden');
+    if (isHidden) {
+        // Load details once
+        if (!body.dataset.loaded) {
+            const subjectBase = decodeURIComponent(encodedSubject);
+            const { startDate, endDate } = getAttendanceDateBounds();
+            try {
+                const { data, error } = await supabase
+                    .from('attendance_log')
+                    .select('date,subject_name,category,status')
+                    .eq('user_id', currentUser.id)
+                    .gte('date', startDate)
+                    .lte('date', endDate)
+                    .order('date', { ascending: false });
+                if (error) throw error;
+
+                const rows = (data || []).filter(r => r.subject_name === subjectBase);
+                if (rows.length === 0) {
+                    body.innerHTML = '<p class="text-xs text-gray-600 dark:text-gray-400">No records in range.</p>';
+                } else {
+                    body.innerHTML = rows.map(r => {
+                        const full = `${r.subject_name} ${r.category}`;
+                        const t = getActiveTimetable(r.date);
+                        const weight = t && t.subjectWeights ? (t.subjectWeights[full] || 1) : 1;
+                        const badge = r.status === 'Attended' ? 'bg-green-500' : r.status === 'Missed' ? 'bg-red-500' : r.status === 'Holiday' ? 'bg-blue-500' : 'bg-gray-400';
+                        return `
+                            <div class="flex items-center justify-between p-2 rounded-lg bg-white/70 dark:bg-apple-gray-900/60 border border-gray-200/40 dark:border-apple-gray-800/40">
+                                <div class="text-xs text-gray-700 dark:text-gray-300">
+                                    <div class="font-medium">${full}</div>
+                                    <div class="opacity-80">${r.date} • weight ${weight}</div>
+                                </div>
+                                <span class="inline-block w-2 h-2 rounded-full ${badge}"></span>
+                            </div>`;
+                    }).join('');
+                }
+                body.dataset.loaded = '1';
+            } catch (e) {
+                body.innerHTML = '<p class="text-xs text-red-600 dark:text-red-400">Failed to load records.</p>';
+            }
+        }
+        panel.classList.remove('hidden');
+        if (chev) chev.style.transform = 'rotate(180deg)';
+    } else {
+        panel.classList.add('hidden');
+        if (chev) chev.style.transform = '';
+    }
+}
+
+// Subject details modal with unlimited pagination (load more)
+let subjectModalState = { subject: null, page: 0, pageSize: 100, hasMore: true };
+async function openSubjectModal(encodedSubject) {
+    const subjectBase = decodeURIComponent(encodedSubject);
+    subjectModalState = { subject: subjectBase, page: 0, pageSize: 100, hasMore: true };
+
+    const modal = document.getElementById('subject-details-modal');
+    const title = document.getElementById('subject-details-title');
+    const list = document.getElementById('subject-details-list');
+    const loadMoreBtn = document.getElementById('subject-load-more');
+    if (!modal || !title || !list || !loadMoreBtn) return;
+
+    title.textContent = `${subjectBase} • All records`;
+    list.innerHTML = '';
+    loadMoreBtn.onclick = async () => {
+        await appendSubjectRecords();
+    };
+
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    await appendSubjectRecords();
+}
+
+async function appendSubjectRecords() {
+    const { subject, page, pageSize, hasMore } = subjectModalState;
+    if (!hasMore) return;
+
+    try {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        const { data, error, count } = await supabase
+            .from('attendance_log')
+            .select('date,subject_name,category,status', { count: 'exact' })
+            .eq('user_id', currentUser.id)
+            .eq('subject_name', subject)
+            .order('date', { ascending: false })
+            .range(from, to);
+        if (error) throw error;
+
+        const list = document.getElementById('subject-details-list');
+        const items = (data || []).map(r => {
+            const full = `${r.subject_name} ${r.category}`;
+            const t = getActiveTimetable(r.date);
+            const weight = t && t.subjectWeights ? (t.subjectWeights[full] || 1) : 1;
+            const badge = r.status === 'Attended' ? 'bg-green-500' : r.status === 'Missed' ? 'bg-red-500' : r.status === 'Holiday' ? 'bg-blue-500' : 'bg-gray-400';
+            return `
+                <div class="flex items-center justify-between p-2 rounded-lg bg-white/70 dark:bg-apple-gray-900/60 border border-gray-200/40 dark:border-apple-gray-800/40">
+                    <div class="text-xs text-gray-700 dark:text-gray-300">
+                        <div class="font-medium">${full}</div>
+                        <div class="opacity-80">${r.date} • weight ${weight}</div>
+                    </div>
+                    <span class="inline-block w-2 h-2 rounded-full ${badge}"></span>
+                </div>`;
+        }).join('');
+        list.insertAdjacentHTML('beforeend', items || '<p class="text-xs text-gray-600 dark:text-gray-400">No records.</p>');
+
+        const loaded = from + (data ? data.length : 0);
+        subjectModalState.page += 1;
+        subjectModalState.hasMore = count == null ? (data && data.length === pageSize) : loaded < count;
+
+        const loadMoreBtn = document.getElementById('subject-load-more');
+        if (!subjectModalState.hasMore) {
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            loadMoreBtn.textContent = 'All Loaded';
+        } else {
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            loadMoreBtn.textContent = 'Load More';
+        }
+    } catch (e) {
+        showError('Failed to load more records');
+    }
 }
 
 // Toasts

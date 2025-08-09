@@ -225,6 +225,19 @@
         </div>
     </div>
 
+    <div id="subject-details-modal" class="fixed inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm h-full w-full z-50 flex items-center justify-center p-4" style="display:none;">
+        <div class="bg-white/95 dark:bg-apple-gray-900/95 backdrop-blur-xl p-6 rounded-2xl shadow-apple-lg dark:shadow-apple-dark-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto transition-all duration-300 border border-gray-200/50 dark:border-apple-gray-800/50 animate-slide-up">
+            <div class="flex items-start justify-between mb-4">
+                <h2 id="subject-details-title" class="text-xl font-bold text-gray-800 dark:text-white">Subject Details</h2>
+                <button type="button" class="modal-cancel-btn px-3 py-1.5 rounded-lg bg-gray-100/80 dark:bg-apple-gray-800/80 text-gray-700 dark:text-gray-300">Close</button>
+            </div>
+            <div id="subject-details-list" class="space-y-2"></div>
+            <div class="mt-4 flex justify-center">
+                <button id="subject-load-more" class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-apple-gray-800 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-apple-gray-700">Load More</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast container -->
     <div id="toast-container" class="fixed bottom-4 right-4 z-[60] space-y-2"></div>
 
