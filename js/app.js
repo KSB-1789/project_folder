@@ -386,23 +386,14 @@ function renderAttendanceSummary(attendanceData) {
                     attendanceData.map(item => {
                         const key = encodeURIComponent(item.subject);
                         return `
-                        <div class="bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-xl border border-transparent hover:border-gray-200/50 dark:hover:border-apple-gray-800/50 transition-colors">
-                            <button onclick="toggleSubjectDetails('${key}')" class="w-full flex items-center justify-between p-3">
-                                <div class="flex-grow min-w-0 text-left">
-                                    <h4 class="font-medium text-gray-800 dark:text-white text-sm truncate flex items-center gap-2">
-                                        <span>${item.subject}</span>
-                                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-gray-600 dark:text-gray-300">${Math.round(item.attended)}/${Math.round(item.held)}</span>
-                                    </h4>
-                                </div>
-                                <div class="flex items-center gap-3">
-                                    <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.percentage.toFixed(1)}%</span>
-                                    <button type="button" onclick="openSubjectModal('${key}')" class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">View</button>
-                                </div>
-                            </button>
-                            <div id="subject-details-${key}" class="hidden border-t border-gray-200/40 dark:border-apple-gray-800/40">
-                                <div class="max-h-56 overflow-y-auto p-3 space-y-2" id="subject-details-body-${key}">
-                                    <!-- rows injected on demand -->
-                                </div>
+                        <div class="flex items-center justify-between p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-xl">
+                            <div class="flex-grow min-w-0 text-left">
+                                <h4 class="font-medium text-gray-800 dark:text-white text-sm truncate">${item.subject}</h4>
+                                <p class="text-xs text-gray-600 dark:text-gray-400">${Math.round(item.attended)}/${Math.round(item.held)} classes</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.percentage.toFixed(1)}%</span>
+                                <button type="button" onclick="openSubjectModal('${key}')" class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">View</button>
                             </div>
                         </div>`;
                     }).join('')
@@ -1338,7 +1329,15 @@ async function toggleSubjectDetails(encodedSubject) {
                     .order('date', { ascending: false });
                 if (error) throw error;
 
-                const rows = (data || []).filter(r => r.subject_name === subjectBase);
+                const rows = (data || [])
+                    .filter(r => r.subject_name === subjectBase)
+                    .filter(r => {
+                        // Only show when the active timetable scheduled it on that date
+                        const full = `${r.subject_name} ${r.category}`;
+                        const t = getActiveTimetable(r.date);
+                        const dayName = new Date(r.date).toLocaleDateString('en-US', { weekday: 'long' });
+                        return !!(t && t.schedule && Array.isArray(t.schedule[dayName]) && t.schedule[dayName].includes(full));
+                    });
                 if (rows.length === 0) {
                     body.innerHTML = '<p class="text-xs text-gray-600 dark:text-gray-400">No records in range.</p>';
                 } else {
