@@ -233,8 +233,8 @@ async function renderMainDashboard() {
 function renderStatusCards(activeTimetable, attendanceData) {
     const totalSubjects = attendanceData.length;
     const aboveThreshold = attendanceData.filter(item => item.percentage >= userProfile.attendance_threshold).length;
-    const avgAttendance = totalSubjects > 0 ? 
-        (attendanceData.reduce((sum, item) => sum + item.percentage, 0) / totalSubjects).toFixed(1) : 0;
+    const avgRaw = totalSubjects > 0 ? (attendanceData.reduce((sum, item) => sum + item.percentage, 0) / totalSubjects) : 0;
+    const avgAttendance = formatPercentage(avgRaw);
     
     return `
         <div class="bg-white/70 dark:bg-apple-gray-900/70 backdrop-blur-xl rounded-2xl p-4 sm:p-6 shadow-apple dark:shadow-apple-dark border border-gray-200/50 dark:border-apple-gray-800/50">
@@ -400,7 +400,7 @@ function renderAttendanceSummary(attendanceData) {
                                 <p class="text-xs text-gray-600 dark:text-gray-400">${Math.round(item.attended)}/${Math.round(item.held)} classes</p>
                             </div>
                             <div class="flex items-center gap-2">
-                                <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${item.percentage.toFixed(1)}%</span>
+                                <span class="text-sm font-bold ${item.percentage >= userProfile.attendance_threshold ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">${formatPercentage(item.percentage)}%</span>
                                 <button type="button" onclick="openSubjectModal('${key}')" class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600">View</button>
                             </div>
                         </div>`;
@@ -1173,7 +1173,7 @@ function openAssistant() {
                     <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
                         <div class="flex items-center justify-between">
                             <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
-                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${formatPercentage(item.percentage)}%</span>
                         </div>
                         <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">No remaining classes scheduled.</p>
                     </div>`;
@@ -1193,7 +1193,7 @@ function openAssistant() {
                     <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
                         <div class="flex items-center justify-between">
                             <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
-                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${formatPercentage(item.percentage)}%</span>
                         </div>
                         ${unreachable
                             ? `<p class=\"text-xs text-gray-600 dark:text-gray-400 mt-1\">Even if you attend all remaining (${R} weighted), you cannot secure a 1-session buffer. Attend all to maximize your percentage.</p>`
@@ -1208,7 +1208,7 @@ function openAssistant() {
                     <div class="p-3 bg-gray-50/50 dark:bg-apple-gray-850/50 rounded-lg border border-gray-200/40 dark:border-apple-gray-800/40">
                         <div class="flex items-center justify-between">
                             <span class="font-medium text-gray-800 dark:text-white text-sm">${subjectBase}</span>
-                            <span class="text-xs text-gray-600 dark:text-gray-400">${item.percentage.toFixed(1)}%</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">${formatPercentage(item.percentage)}%</span>
                         </div>
                         <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">You can safely miss <strong>${maxMissWeighted}</strong> weighted (~${canMissSessions} session${canMissSessions===1?'':'s'}) and stay at or above ${userProfile.attendance_threshold}%.</p>
                     </div>
@@ -1253,6 +1253,16 @@ function showError(message) {
 function showSuccess(message) {
     console.log(message);
     showToast('Success', message, 'success');
+}
+
+// Format percentages truncated to 2 decimals (no rounding):
+// - If integer, show without decimals
+// - Else show up to 2 decimals, trimming unnecessary trailing zeros
+function formatPercentage(value) {
+    const v = Number(value) || 0;
+    const truncated = Math.trunc(v * 100) / 100;
+    const s = truncated.toFixed(2);
+    return s.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
 // Make functions globally available

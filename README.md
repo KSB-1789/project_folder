@@ -341,7 +341,10 @@ Each timetable contains:
 **How it works:**
 - **Priority System**: Special timetables take priority over normal ones when active
 - **Smart Switching**: The system automatically detects which timetable is active
-- **Attendance Calculation**: Only counts attendance from the currently active timetable
+- **Attendance Calculation**:
+  - Held/attended counts come from marked logs (Attended/Missed) only
+  - For each date, a record counts only if the active timetable for that date scheduled the subject on that weekday
+  - Holiday/Not Marked do not increase held
 - **Data Preservation**: All attendance records are preserved when switching between timetables
 
 ### Custom Subject Weights
@@ -353,6 +356,16 @@ Instead of fixed rules (Lab=2, DSA/DA=2, others=1), you can now set custom weigh
 - **Weight 3-5:** Special importance (counts as 3-5 attendances)
 
 This allows for more precise attendance calculations based on your institution's specific requirements.
+
+### UI: Marking and Editing
+
+- **Daily tracker (today only)**: includes a Not Held Yet button "/" to set status to Not Marked
+- **Subject Details modal**: shows an Edit button "\\" that opens a chooser (Present / Absent / Holiday). The "/" button is not shown here
+- After any change, the dashboard refreshes and the summary updates instantly
+
+### Percentage Display
+
+- Percentages are shown truncated to two decimals without rounding (e.g., 77.869 → 77.86, 75.00 → 75)
 
 ### Timetable Management
 
