@@ -316,7 +316,7 @@ async function renderAttendanceTracker(activeTimetable) {
     const dayName = new Date(currentDate).toLocaleDateString('en-US', { weekday: 'long' });
     const todayOnly = new Date(new Date().toISOString().split('T')[0]);
     const selectedDate = new Date(currentDate);
-    const canMarkNotHeld = selectedDate >= todayOnly;
+    const canMarkNotHeld = selectedDate.getTime() === todayOnly.getTime();
     const todaysClasses = activeTimetable.schedule[dayName] || [];
     const attendanceRecords = await getTodaysAttendance(currentDate);
     
@@ -1461,22 +1461,33 @@ async function appendSubjectRecords() {
 }
 
 async function cycleRecordStatus(date, subjectName, category) {
+    // Open a small inline chooser near the record
+    const key = encodeURIComponent(`${date}|${subjectName}|${category}`);
+    const row = document.getElementById(`rec-${key}`);
+    if (!row) return;
+    // Remove existing chooser if any
+    const existing = document.getElementById(`chooser-${key}`);
+    if (existing) existing.remove();
+
+    const chooser = document.createElement('div');
+    chooser.id = `chooser-${key}`;
+    chooser.className = 'flex gap-2 p-1 rounded-lg bg-white/90 dark:bg-apple-gray-900/90 border border-gray-200/50 dark:border-apple-gray-800/50';
+    chooser.innerHTML = `
+        <button class="px-2 py-0.5 text-xs rounded bg-green-500 text-white" data-val="Attended">Present</button>
+        <button class="px-2 py-0.5 text-xs rounded bg-red-500 text-white" data-val="Missed">Absent</button>
+        <button class="px-2 py-0.5 text-xs rounded bg-blue-500 text-white" data-val="Holiday">Holiday</button>
+    `;
+    const buttons = chooser.querySelectorAll('button');
+    buttons.forEach(btn => btn.addEventListener('click', async () => {
+        const next = btn.dataset.val;
+        await setExplicitStatus(date, subjectName, category, next);
+        chooser.remove();
+    }));
+    row.appendChild(chooser);
+}
+
+async function setExplicitStatus(date, subjectName, category, next) {
     try {
-        // Fetch current
-        const { data: rows, error: fetchErr } = await supabase
-            .from('attendance_log')
-            .select('status')
-            .eq('user_id', currentUser.id)
-            .eq('date', date)
-            .eq('subject_name', subjectName)
-            .eq('category', category)
-            .limit(1);
-        if (fetchErr) throw fetchErr;
-
-        const current = (rows && rows[0] && rows[0].status) || 'Not Marked';
-        const order = ['Not Marked', 'Attended', 'Missed', 'Holiday'];
-        const next = order[(order.indexOf(current) + 1) % order.length];
-
         const { error } = await supabase
             .from('attendance_log')
             .upsert({
@@ -1496,6 +1507,8 @@ async function cycleRecordStatus(date, subjectName, category) {
             row.dataset.status = next;
             dot.className = 'inline-block w-2 h-2 rounded-full ' + (next === 'Attended' ? 'bg-green-500' : next === 'Missed' ? 'bg-red-500' : next === 'Holiday' ? 'bg-blue-500' : 'bg-gray-400');
         }
+        // Refresh summary counts
+        await renderMainDashboard();
         showSuccess('Status updated');
     } catch (e) {
         showError('Failed to update status');
@@ -1522,6 +1535,7 @@ async function setRecordNotHeld(date, subjectName, category) {
             row.dataset.status = 'Not Marked';
             dot.className = 'inline-block w-2 h-2 rounded-full bg-gray-400';
         }
+        await renderMainDashboard();
         showSuccess('Marked as not held');
     } catch (e) {
         showError('Failed to mark not held');
