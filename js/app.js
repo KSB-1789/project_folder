@@ -55,6 +55,15 @@ function setupEventListeners() {
         if (e.target.classList.contains('modal-cancel-btn')) {
             closeAllModals();
         }
+        // Close when clicking backdrop
+        const id = (e.target && e.target.id) || '';
+        if (id.endsWith('-modal')) {
+            closeAllModals();
+        }
+    });
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAllModals();
     });
     // Extra day form
     const extraDayForm = document.getElementById('extra-day-form');
@@ -601,6 +610,7 @@ async function getAttendanceData() {
             // Only count records that are actually scheduled on that date under the active timetable
             const fullSubjectName = `${record.subject_name} ${record.category}`;
             const dayName = new Date(record.date).toLocaleDateString('en-US', { weekday: 'long' });
+            // Only count when the active timetable schedule actually includes the subject on that day
             const isScheduled = !!(timetableForDate && timetableForDate.schedule && Array.isArray(timetableForDate.schedule[dayName]) && timetableForDate.schedule[dayName].includes(fullSubjectName));
             if (!isScheduled) return;
 
@@ -660,9 +670,10 @@ async function backfillAttendanceLogs(fromDateStr = null, toDateStr = null) {
 
         let startDate;
         let endDate;
-        if (fromDateStr && toDateStr) {
+    if (fromDateStr && toDateStr) {
             startDate = new Date(fromDateStr);
-            endDate = new Date(toDateStr);
+            const to = new Date(toDateStr);
+            endDate = new Date(Math.min(to.getTime(), today.getTime()));
         } else {
             startDate = userProfile.last_log_date ? new Date(userProfile.last_log_date) : earliestStart;
             if (userProfile.last_log_date) startDate.setDate(startDate.getDate() + 1);
@@ -1394,6 +1405,7 @@ async function appendSubjectRecords() {
             .select('date,subject_name,category,status', { count: 'exact' })
             .eq('user_id', currentUser.id)
             .eq('subject_name', subject)
+            .lte('date', new Date().toISOString().split('T')[0])
             .order('date', { ascending: false })
             .range(from, to);
         if (error) throw error;
