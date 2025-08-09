@@ -586,7 +586,6 @@ async function getTodaysAttendance(date) {
 async function getAttendanceData() {
     try {
         const { startDate, endDate } = getAttendanceDateBounds();
-        // Fetch only what we need; held is computed from timetable schedule per date, not just from logs
         const { data, error } = await supabase
             .from('attendance_log')
             .select('date,subject_name,category,status')
@@ -598,35 +597,29 @@ async function getAttendanceData() {
 
         const attendanceMap = {};
 
-        // Build held from timetable schedule for each date in range
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const dateStr = d.toISOString().split('T')[0];
-            const timetableForDate = getActiveTimetable(dateStr);
-            if (!timetableForDate) continue;
-            if (userProfile.attendance_paused && (!timetableForDate || timetableForDate.type !== 'special')) continue;
-            const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
-            const subjects = (timetableForDate.schedule && timetableForDate.schedule[dayName]) || [];
-            for (const s of subjects) {
-                const full = s;
-                const weight = (timetableForDate.subjectWeights && timetableForDate.subjectWeights[full]) || 1;
-                if (!attendanceMap[full]) attendanceMap[full] = { attended: 0, held: 0, subject: full };
-                attendanceMap[full].held += weight;
-            }
-        }
-
-        // Now add attended from logs only where scheduled
+        // Build held/attended from logs only (bug-free prior behavior),
+        // while still ensuring the subject was scheduled under the active timetable for that date
         (data || []).forEach(record => {
             const timetableForDate = getActiveTimetable(record.date);
             if (userProfile.attendance_paused && (!timetableForDate || timetableForDate.type !== 'special')) return;
+
             const fullSubjectName = `${record.subject_name} ${record.category}`;
             const dayName = new Date(record.date).toLocaleDateString('en-US', { weekday: 'long' });
             const isScheduled = !!(timetableForDate && timetableForDate.schedule && Array.isArray(timetableForDate.schedule[dayName]) && timetableForDate.schedule[dayName].includes(fullSubjectName));
             if (!isScheduled) return;
-            const weight = (timetableForDate.subjectWeights && timetableForDate.subjectWeights[fullSubjectName]) || 1;
-            if (!attendanceMap[fullSubjectName]) attendanceMap[fullSubjectName] = { attended: 0, held: 0, subject: fullSubjectName };
-            if (record.status === 'Attended') attendanceMap[fullSubjectName].attended += weight;
+
+            const weight = (timetableForDate && timetableForDate.subjectWeights) ? (timetableForDate.subjectWeights[fullSubjectName] || 1) : 1;
+
+            if (!attendanceMap[fullSubjectName]) {
+                attendanceMap[fullSubjectName] = { attended: 0, held: 0, subject: fullSubjectName };
+            }
+
+            if (record.status === 'Attended' || record.status === 'Missed') {
+                attendanceMap[fullSubjectName].held += weight;
+                if (record.status === 'Attended') {
+                    attendanceMap[fullSubjectName].attended += weight;
+                }
+            }
         });
 
         // Aggregate Theory/Lab under the same base subject name
