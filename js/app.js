@@ -314,6 +314,9 @@ async function renderAttendanceTracker(activeTimetable) {
     }
     
     const dayName = new Date(currentDate).toLocaleDateString('en-US', { weekday: 'long' });
+    const todayOnly = new Date(new Date().toISOString().split('T')[0]);
+    const selectedDate = new Date(currentDate);
+    const canMarkNotHeld = selectedDate >= todayOnly;
     const todaysClasses = activeTimetable.schedule[dayName] || [];
     const attendanceRecords = await getTodaysAttendance(currentDate);
     
@@ -366,6 +369,11 @@ async function renderAttendanceTracker(activeTimetable) {
                                             class="attendance-btn px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${status === 'Holiday' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-apple-gray-700 text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900/30'}">
                                         Holiday
                                     </button>
+                                     ${canMarkNotHeld ? `
+                                      <button data-status="Not Marked" onclick="setRecordNotHeld('${currentDate}','${safeSubjectName}','${safeCategory}')" 
+                                              class="attendance-btn px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 bg-gray-200 dark:bg-apple-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-apple-gray-600">
+                                          /
+                                      </button>` : ''}
                                 </div>
                             </div>
                         `;
@@ -578,6 +586,7 @@ async function getTodaysAttendance(date) {
 async function getAttendanceData() {
     try {
         const { startDate, endDate } = getAttendanceDateBounds();
+        // Fetch only what we need; held is computed from timetable schedule per date, not just from logs
         const { data, error } = await supabase
             .from('attendance_log')
             .select('date,subject_name,category,status')
@@ -589,36 +598,35 @@ async function getAttendanceData() {
 
         const attendanceMap = {};
 
-        (data || []).forEach(record => {
-            // Determine active timetable and subject weight for the record's date
-            const timetableForDate = getActiveTimetable(record.date);
-
-            // If attendance is paused and the active timetable is not special, skip counting
-            if (userProfile.attendance_paused && (!timetableForDate || timetableForDate.type !== 'special')) {
-                return;
+        // Build held from timetable schedule for each date in range
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = d.toISOString().split('T')[0];
+            const timetableForDate = getActiveTimetable(dateStr);
+            if (!timetableForDate) continue;
+            if (userProfile.attendance_paused && (!timetableForDate || timetableForDate.type !== 'special')) continue;
+            const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+            const subjects = (timetableForDate.schedule && timetableForDate.schedule[dayName]) || [];
+            for (const s of subjects) {
+                const full = s;
+                const weight = (timetableForDate.subjectWeights && timetableForDate.subjectWeights[full]) || 1;
+                if (!attendanceMap[full]) attendanceMap[full] = { attended: 0, held: 0, subject: full };
+                attendanceMap[full].held += weight;
             }
+        }
 
-            // Only count records that are actually scheduled on that date under the active timetable
+        // Now add attended from logs only where scheduled
+        (data || []).forEach(record => {
+            const timetableForDate = getActiveTimetable(record.date);
+            if (userProfile.attendance_paused && (!timetableForDate || timetableForDate.type !== 'special')) return;
             const fullSubjectName = `${record.subject_name} ${record.category}`;
             const dayName = new Date(record.date).toLocaleDateString('en-US', { weekday: 'long' });
-            // Only count when the active timetable schedule actually includes the subject on that day
             const isScheduled = !!(timetableForDate && timetableForDate.schedule && Array.isArray(timetableForDate.schedule[dayName]) && timetableForDate.schedule[dayName].includes(fullSubjectName));
             if (!isScheduled) return;
-
-            const weight = timetableForDate && timetableForDate.subjectWeights
-                ? (timetableForDate.subjectWeights[fullSubjectName] || 1)
-                : 1;
-
-            if (!attendanceMap[fullSubjectName]) {
-                attendanceMap[fullSubjectName] = { attended: 0, held: 0, subject: fullSubjectName };
-            }
-
-            if (record.status === 'Attended' || record.status === 'Missed') {
-                attendanceMap[fullSubjectName].held += weight;
-                if (record.status === 'Attended') {
-                    attendanceMap[fullSubjectName].attended += weight;
-                }
-            }
+            const weight = (timetableForDate.subjectWeights && timetableForDate.subjectWeights[fullSubjectName]) || 1;
+            if (!attendanceMap[fullSubjectName]) attendanceMap[fullSubjectName] = { attended: 0, held: 0, subject: fullSubjectName };
+            if (record.status === 'Attended') attendanceMap[fullSubjectName].attended += weight;
         });
 
         // Aggregate Theory/Lab under the same base subject name
@@ -1267,6 +1275,8 @@ window.updateAttendanceThreshold = updateAttendanceThreshold;
 window.saveExtraWorkingDay = saveExtraWorkingDay;
 window.toggleSubjectDetails = toggleSubjectDetails;
 window.openSubjectModal = openSubjectModal;
+window.cycleRecordStatus = cycleRecordStatus;
+window.setRecordNotHeld = setRecordNotHeld;
 
 // Helpers
 function splitSubjectAndCategory(subject) {
@@ -1415,13 +1425,18 @@ async function appendSubjectRecords() {
             const t = getActiveTimetable(r.date);
             const weight = t && t.subjectWeights ? (t.subjectWeights[full] || 1) : 1;
             const badge = r.status === 'Attended' ? 'bg-green-500' : r.status === 'Missed' ? 'bg-red-500' : r.status === 'Holiday' ? 'bg-blue-500' : 'bg-gray-400';
+            const key = encodeURIComponent(`${r.date}|${r.subject_name}|${r.category}`);
             return `
-                <div class="flex items-center justify-between p-2 rounded-lg bg-white/70 dark:bg-apple-gray-900/60 border border-gray-200/40 dark:border-apple-gray-800/40">
+                <div id="rec-${key}" data-status="${r.status}" class="flex items-center justify-between p-2 rounded-lg bg-white/70 dark:bg-apple-gray-900/60 border border-gray-200/40 dark:border-apple-gray-800/40">
                     <div class="text-xs text-gray-700 dark:text-gray-300">
                         <div class="font-medium">${full}</div>
                         <div class="opacity-80">${r.date} • weight ${weight}</div>
                     </div>
-                    <span class="inline-block w-2 h-2 rounded-full ${badge}"></span>
+                    <div class="flex items-center gap-2">
+                        <span id="dot-${key}" class="inline-block w-2 h-2 rounded-full ${badge}"></span>
+                        <button title="Cycle status (Present/Absent/Holiday)" class="px-2 py-0.5 text-xs rounded bg-black/5 dark:bg-white/10" onclick="cycleRecordStatus('${r.date}','${r.subject_name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${r.category.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">\\</button>
+                        <button title="Mark Not Held" class="px-2 py-0.5 text-xs rounded bg-black/5 dark:bg-white/10" onclick="setRecordNotHeld('${r.date}','${r.subject_name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${r.category.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">/</button>
+                    </div>
                 </div>`;
         }).join('');
         list.insertAdjacentHTML('beforeend', items || '<p class="text-xs text-gray-600 dark:text-gray-400">No records.</p>');
@@ -1442,6 +1457,74 @@ async function appendSubjectRecords() {
         }
     } catch (e) {
         showError('Failed to load more records');
+    }
+}
+
+async function cycleRecordStatus(date, subjectName, category) {
+    try {
+        // Fetch current
+        const { data: rows, error: fetchErr } = await supabase
+            .from('attendance_log')
+            .select('status')
+            .eq('user_id', currentUser.id)
+            .eq('date', date)
+            .eq('subject_name', subjectName)
+            .eq('category', category)
+            .limit(1);
+        if (fetchErr) throw fetchErr;
+
+        const current = (rows && rows[0] && rows[0].status) || 'Not Marked';
+        const order = ['Not Marked', 'Attended', 'Missed', 'Holiday'];
+        const next = order[(order.indexOf(current) + 1) % order.length];
+
+        const { error } = await supabase
+            .from('attendance_log')
+            .upsert({
+                user_id: currentUser.id,
+                date,
+                subject_name: subjectName,
+                category,
+                status: next
+            }, { onConflict: 'user_id,date,subject_name,category' });
+        if (error) throw error;
+
+        // Update UI dot immediately
+        const key = encodeURIComponent(`${date}|${subjectName}|${category}`);
+        const row = document.getElementById(`rec-${key}`);
+        const dot = document.getElementById(`dot-${key}`);
+        if (row && dot) {
+            row.dataset.status = next;
+            dot.className = 'inline-block w-2 h-2 rounded-full ' + (next === 'Attended' ? 'bg-green-500' : next === 'Missed' ? 'bg-red-500' : next === 'Holiday' ? 'bg-blue-500' : 'bg-gray-400');
+        }
+        showSuccess('Status updated');
+    } catch (e) {
+        showError('Failed to update status');
+    }
+}
+
+async function setRecordNotHeld(date, subjectName, category) {
+    try {
+        const { error } = await supabase
+            .from('attendance_log')
+            .upsert({
+                user_id: currentUser.id,
+                date,
+                subject_name: subjectName,
+                category,
+                status: 'Not Marked'
+            }, { onConflict: 'user_id,date,subject_name,category' });
+        if (error) throw error;
+
+        const key = encodeURIComponent(`${date}|${subjectName}|${category}`);
+        const row = document.getElementById(`rec-${key}`);
+        const dot = document.getElementById(`dot-${key}`);
+        if (row && dot) {
+            row.dataset.status = 'Not Marked';
+            dot.className = 'inline-block w-2 h-2 rounded-full bg-gray-400';
+        }
+        showSuccess('Marked as not held');
+    } catch (e) {
+        showError('Failed to mark not held');
     }
 }
 
